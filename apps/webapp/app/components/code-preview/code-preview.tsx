@@ -63,6 +63,7 @@ interface CodePreviewProps {
   onRefetchData?: () => void; // Callback to refetch data when barcode is added
   sequentialId?: string | null;
   showShelfBranding?: boolean;
+  organizationLogoUrl?: string | null;
 }
 
 export const CodePreview = ({
@@ -77,6 +78,7 @@ export const CodePreview = ({
   onRefetchData,
   sequentialId,
   showShelfBranding,
+  organizationLogoUrl,
 }: CodePreviewProps) => {
   const captureDivRef = useRef<HTMLImageElement>(null);
   const downloadBtnRef = useRef<HTMLAnchorElement>(null);
@@ -324,6 +326,7 @@ export const CodePreview = ({
             qrIdDisplayPreference={organization?.qrIdDisplayPreference}
             sequentialId={sequentialId}
             showShelfBranding={resolvedShowShelfBranding}
+            organizationLogoUrl={organizationLogoUrl}
           />
         ) : selectedCode?.type === "barcode" ? (
           <BarcodeLabel
@@ -331,6 +334,7 @@ export const CodePreview = ({
             data={selectedCode.barcodeData}
             title={item.name}
             showShelfBranding={resolvedShowShelfBranding}
+            organizationLogoUrl={organizationLogoUrl}
           />
         ) : null}
       </div>
@@ -385,6 +389,7 @@ interface QrLabelProps {
   qrIdDisplayPreference?: string;
   sequentialId?: string | null;
   showShelfBranding?: boolean;
+  organizationLogoUrl?: string | null;
 }
 
 export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
@@ -395,6 +400,7 @@ export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
       qrIdDisplayPreference,
       sequentialId,
       showShelfBranding = true,
+      organizationLogoUrl,
     } = props ?? {};
     return (
       <div
@@ -439,10 +445,24 @@ export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
               ? sequentialId
               : data?.qr?.id}
           </div>
-          {showShelfBranding ? (
-            <div>
-              Powered by{" "}
-              <span style={{ fontWeight: 600, color: "black" }}>shelf.nu</span>
+          {showShelfBranding && organizationLogoUrl ? (
+            <div
+              style={{
+                marginTop: "8px",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={organizationLogoUrl}
+                alt="Organization logo"
+                style={{
+                  maxWidth: "80px",
+                  maxHeight: "30px",
+                  objectFit: "contain",
+                }}
+              />
             </div>
           ) : null}
         </div>
@@ -459,11 +479,17 @@ interface BarcodeLabelProps {
   };
   title: string;
   showShelfBranding?: boolean;
+  organizationLogoUrl?: string | null;
 }
 
 export const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(
   function BarcodeLabel(props, ref) {
-    const { data, title, showShelfBranding = true } = props ?? {};
+    const {
+      data,
+      title,
+      showShelfBranding = true,
+      organizationLogoUrl,
+    } = props ?? {};
 
     if (!data) return null;
 
@@ -533,10 +559,24 @@ export const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(
               )}
             </div>
           </div>
-          {showShelfBranding ? (
-            <div>
-              Powered by{" "}
-              <span style={{ fontWeight: 600, color: "black" }}>shelf.nu</span>
+          {showShelfBranding && organizationLogoUrl ? (
+            <div
+              style={{
+                marginTop: "8px",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={organizationLogoUrl}
+                alt="Organization logo"
+                style={{
+                  maxWidth: "80px",
+                  maxHeight: "30px",
+                  objectFit: "contain",
+                }}
+              />
             </div>
           ) : null}
         </div>

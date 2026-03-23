@@ -51,6 +51,9 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
         qrObj,
         barcodes: kit.barcodes,
         showShelfBranding: currentOrganization.showShelfBranding,
+        organizationLogoUrl: currentOrganization.image
+          ? `/api/image/${currentOrganization.image.id}`
+          : null,
       })
     );
   } catch (cause) {
