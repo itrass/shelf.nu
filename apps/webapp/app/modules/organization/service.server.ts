@@ -356,6 +356,11 @@ const ORGANIZATION_SELECT_FIELDS = {
   type: true,
   name: true,
   imageId: true,
+  image: {
+    select: {
+      id: true,
+    },
+  },
   userId: true,
   updatedAt: true,
   currency: true,
@@ -917,8 +922,8 @@ export async function transferOwnership({
       const subscriptionStatus = subscriptionTransferError
         ? `Failed - ${subscriptionTransferError.message}`
         : subscriptionTransferred
-        ? "Yes"
-        : "No (not requested)";
+          ? "Yes"
+          : "No (not requested)";
 
       sendEmail({
         subject: subscriptionTransferError

@@ -19,23 +19,48 @@ describe("QrLabel", () => {
     },
   } as const;
 
-  it("shows Shelf branding by default", () => {
-    render(<QrLabel {...(baseProps as any)} />);
+  it("shows organization logo when branding is enabled and logo URL is provided", () => {
+    render(
+      <QrLabel
+        {...({
+          ...baseProps,
+          showShelfBranding: true,
+          organizationLogoUrl: "/api/image/org-logo-123",
+        } as any)}
+      />
+    );
 
-    expect(screen.getByText(/Powered by/i)).toBeInTheDocument();
+    const logo = screen.getByAltText("Organization logo");
+    expect(logo).toBeInTheDocument();
+    expect(logo).toHaveAttribute("src", "/api/image/org-logo-123");
   });
 
-  it("hides Shelf branding when requested", () => {
+  it("hides organization logo when branding is disabled", () => {
     render(
       <QrLabel
         {...({
           ...baseProps,
           showShelfBranding: false,
+          organizationLogoUrl: "/api/image/org-logo-123",
         } as any)}
       />
     );
 
-    expect(screen.queryByText(/Powered by/i)).not.toBeInTheDocument();
+    expect(screen.queryByAltText("Organization logo")).not.toBeInTheDocument();
+  });
+
+  it("hides organization logo when no logo URL is provided", () => {
+    render(
+      <QrLabel
+        {...({
+          ...baseProps,
+          showShelfBranding: true,
+          organizationLogoUrl: null,
+        } as any)}
+      />
+    );
+
+    expect(screen.queryByAltText("Organization logo")).not.toBeInTheDocument();
   });
 });
 
@@ -48,22 +73,47 @@ describe("BarcodeLabel", () => {
     },
   } as const;
 
-  it("shows Shelf branding by default", () => {
-    render(<BarcodeLabel {...(baseProps as any)} />);
+  it("shows organization logo when branding is enabled and logo URL is provided", () => {
+    render(
+      <BarcodeLabel
+        {...({
+          ...baseProps,
+          showShelfBranding: true,
+          organizationLogoUrl: "/api/image/org-logo-123",
+        } as any)}
+      />
+    );
 
-    expect(screen.getByText(/Powered by/i)).toBeInTheDocument();
+    const logo = screen.getByAltText("Organization logo");
+    expect(logo).toBeInTheDocument();
+    expect(logo).toHaveAttribute("src", "/api/image/org-logo-123");
   });
 
-  it("hides Shelf branding when requested", () => {
+  it("hides organization logo when branding is disabled", () => {
     render(
       <BarcodeLabel
         {...({
           ...baseProps,
           showShelfBranding: false,
+          organizationLogoUrl: "/api/image/org-logo-123",
         } as any)}
       />
     );
 
-    expect(screen.queryByText(/Powered by/i)).not.toBeInTheDocument();
+    expect(screen.queryByAltText("Organization logo")).not.toBeInTheDocument();
+  });
+
+  it("hides organization logo when no logo URL is provided", () => {
+    render(
+      <BarcodeLabel
+        {...({
+          ...baseProps,
+          showShelfBranding: true,
+          organizationLogoUrl: null,
+        } as any)}
+      />
+    );
+
+    expect(screen.queryByAltText("Organization logo")).not.toBeInTheDocument();
   });
 });

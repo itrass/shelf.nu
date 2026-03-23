@@ -26,6 +26,7 @@ export type BulkQrDownloadLoaderData = {
   }>;
   qrIdDisplayPreference: string;
   showShelfBranding: boolean;
+  organizationLogoUrl: string | null;
 };
 
 /**
@@ -101,6 +102,9 @@ export async function loader({ context, request }: ActionFunctionArgs) {
         assets: assetsWithQrObj,
         qrIdDisplayPreference: currentOrganization.qrIdDisplayPreference,
         showShelfBranding: currentOrganization.showShelfBranding,
+        organizationLogoUrl: currentOrganization.image
+          ? `/api/image/${currentOrganization.image.id}`
+          : null,
       })
     );
   } catch (cause) {

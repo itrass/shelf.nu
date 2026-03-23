@@ -56,6 +56,9 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
         barcodes: asset.barcodes,
         sequentialId: asset.sequentialId,
         showShelfBranding: currentOrganization.showShelfBranding,
+        organizationLogoUrl: currentOrganization.image
+          ? `/api/image/${currentOrganization.image.id}`
+          : null,
       })
     );
   } catch (cause) {

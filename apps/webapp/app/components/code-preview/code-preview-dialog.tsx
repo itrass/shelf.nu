@@ -47,6 +47,7 @@ export function CodePreviewDialog({
     }>;
     sequentialId?: string | null;
     showShelfBranding?: boolean;
+    organizationLogoUrl?: string | null;
   }>({
     api: `/api/${item.type === "asset" ? "assets" : "kits"}/${
       item.id
@@ -141,6 +142,7 @@ export function CodePreviewDialog({
                       item.type === "asset" ? item.sequentialId : undefined
                     }
                     showShelfBranding={data?.showShelfBranding}
+                    organizationLogoUrl={data?.organizationLogoUrl}
                   />
                 </Card>
               </When>
