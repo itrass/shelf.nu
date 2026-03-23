@@ -43,7 +43,10 @@ export function InvitationEmailTemplate({
             <br />
             {invite.inviter.firstName} {invite.inviter.lastName} vous invite à
             rejoindre Shelf en tant que membre de l'espace de travail{" "}
-            {invite.organization.name}. Cliquez sur le lien pour accepter
+            <span style={{ color: "#101828", fontWeight: "600" }}>
+              "{invite.organization.name}"
+            </span>
+            . Cliquez sur le lien pour accepter
             l'invitation :
           </Text>
 
