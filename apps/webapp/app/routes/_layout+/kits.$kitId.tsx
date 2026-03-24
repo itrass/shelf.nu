@@ -184,6 +184,10 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       lastScan,
       currentOrganization,
       userId,
+      showShelfBranding: currentOrganization.showShelfBranding,
+      organizationLogoUrl: currentOrganization.image
+        ? `/api/image/${currentOrganization.image.id}`
+        : null,
     });
   } catch (cause) {
     const reason = makeShelfError(cause, { kitId, userId });
@@ -424,8 +428,16 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
 
 export default function KitDetails() {
   usePosition();
-  const { kit, currentBooking, qrObj, lastScan, userId, currentOrganization } =
-    useLoaderData<typeof loader>();
+  const {
+    kit,
+    currentBooking,
+    qrObj,
+    lastScan,
+    userId,
+    currentOrganization,
+    showShelfBranding,
+    organizationLogoUrl,
+  } = useLoaderData<typeof loader>();
   const { roles } = useUserRoleHelper();
   const { canUseBarcodes } = useBarcodePermissions();
 
@@ -521,6 +533,8 @@ export default function KitDetails() {
               name: kit.name,
               type: "kit",
             }}
+            showShelfBranding={showShelfBranding}
+            organizationLogoUrl={organizationLogoUrl}
           />
           {userHasPermission({
             roles,
