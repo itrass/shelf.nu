@@ -381,6 +381,7 @@ const ORGANIZATION_SELECT_FIELDS = {
   usedAuditTrial: true,
   hasSequentialIdsMigrated: true,
   qrIdDisplayPreference: true,
+  sequentialIdPrefix: true,
   showShelfBranding: true,
   customEmailFooter: true,
 };
