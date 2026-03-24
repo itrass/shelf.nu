@@ -104,7 +104,7 @@ export function AuditUpdatesEmailTemplate({
             {heading}
           </Heading>
           <Heading as="h2" style={{ ...styles.h2 }}>
-            {audit.name} | {assetCount} {assetCount === 1 ? "actif" : "actifs"}
+            {audit.name} | {assetCount} {assetCount === 1 ? "asset" : "assets"}
           </Heading>
           <p style={{ ...styles.p }}>
             <span style={{ color: "#101828", fontWeight: "600" }}>

@@ -160,14 +160,14 @@ export async function sendAuditAssignedEmail({
   try {
     const html = await auditUpdatesTemplateString({
       audit,
-      heading: `🔍 You've been assigned to audit: "${audit.name}"`,
+      heading: `🔍 Vous avez été assigné à l'audit : "${audit.name}"`,
       hints,
       assetCount,
     });
 
     sendEmail({
       to: assigneeEmail,
-      subject: `🔍 You've been assigned to audit: "${audit.name}" - shelf.nu`,
+      subject: `🔍 Vous avez été assigné à l'audit : "${audit.name}" - shelf.nu`,
       text: auditAssignedEmailContent({
         auditName: audit.name,
         assetsCount: assetCount,
@@ -226,14 +226,14 @@ export function sendAuditCancelledEmails({
     try {
       const html = await auditUpdatesTemplateString({
         audit,
-        heading: `❌ Audit cancelled: "${audit.name}"`,
+        heading: `❌ Audit annulé : "${audit.name}"`,
         hints,
         assetCount,
       });
 
       sendEmail({
         to: assignment.user.email,
-        subject: `❌ Audit cancelled: "${audit.name}" - shelf.nu`,
+        subject: `❌ Audit annulé : "${audit.name}" - shelf.nu`,
         text: auditCancelledEmailContent({
           auditName: audit.name,
           assetsCount: assetCount,
@@ -306,7 +306,7 @@ export function sendAuditCompletedEmail({
     try {
       const html = await auditUpdatesTemplateString({
         audit,
-        heading: `✅ Audit completed: "${audit.name}"`,
+        heading: `✅ Audit terminé : "${audit.name}"`,
         hints,
         assetCount,
         completedAt,
@@ -315,7 +315,7 @@ export function sendAuditCompletedEmail({
 
       sendEmail({
         to: assignment.user.email,
-        subject: `✅ Audit completed: "${audit.name}" - shelf.nu`,
+        subject: `✅ Audit terminé : "${audit.name}" - shelf.nu`,
         text: auditCompletedEmailContent({
           auditName: audit.name,
           assetsCount: assetCount,
@@ -459,14 +459,14 @@ export function sendAuditOverdueEmail({
     try {
       const html = await auditUpdatesTemplateString({
         audit,
-        heading: `⚠️ Audit overdue: "${audit.name}"`,
+        heading: `⚠️ Audit en retard : "${audit.name}"`,
         hints,
         assetCount,
       });
 
       sendEmail({
         to: recipient.email,
-        subject: `⚠️ Audit overdue: "${audit.name}" - shelf.nu`,
+        subject: `⚠️ Audit en retard : "${audit.name}" - shelf.nu`,
         text: auditOverdueEmailContent({
           auditName: audit.name,
           assetsCount: assetCount,

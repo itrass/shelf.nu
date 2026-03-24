@@ -53,7 +53,7 @@ function ChangeEmailAddressHtmlEmailTemplate({
             <b>{otp}</b>
           </h2>
           <Text style={{ ...styles.p }}>
-            Ne partagez ce code OTP avec personne. Notre équipe de service
+            Ne partagez ce code OTP avec personne. Notre service
             client ne vous demandera jamais votre mot de passe, OTP, carte de
             crédit ou informations bancaires.
           </Text>

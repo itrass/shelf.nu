@@ -81,7 +81,7 @@ export function BookingUpdatesEmailTemplate({
           </Heading>
           <Heading as="h2" style={{ ...styles.h2 }}>
             {booking.name} | {assetCount}{" "}
-            {assetCount === 1 ? "actif" : "actifs"}
+            {assetCount === 1 ? "asset" : "assets"}
           </Heading>
           <p style={{ ...styles.p }}>
             <span style={{ color: "#101828", fontWeight: "600" }}>
