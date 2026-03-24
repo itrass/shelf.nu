@@ -750,6 +750,9 @@ model Organization {
   // QR code display preference - which ID to show on QR code labels
   qrIdDisplayPreference QrIdDisplayPreference @default(QR_ID)
 
+  // Sequential ID prefix for assets (e.g., "SAM" in "SAM-0001")
+  sequentialIdPrefix String @default("SAM") @db.VarChar(10)
+
   // Branding preference for downloadable labels
   showShelfBranding Boolean @default(true)
 
