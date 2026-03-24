@@ -168,6 +168,10 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       timeZone,
       qrObj,
       reminders,
+      showShelfBranding: currentOrganization.showShelfBranding,
+      organizationLogoUrl: currentOrganization.image
+        ? `/api/image/${currentOrganization.image.id}`
+        : null,
     });
   } catch (cause) {
     const reason = makeShelfError(cause);
@@ -242,6 +246,8 @@ export default function AssetOverview() {
     lastScan,
     currentOrganization,
     userId,
+    showShelfBranding,
+    organizationLogoUrl,
   } = useLoaderData<typeof loader>();
   const booking =
     asset.status === AssetStatus.CHECKED_OUT && asset?.bookings?.length
@@ -642,6 +648,8 @@ export default function AssetOverview() {
                 type: "asset",
               }}
               sequentialId={asset.sequentialId}
+              showShelfBranding={showShelfBranding}
+              organizationLogoUrl={organizationLogoUrl}
             />
           )}
           <When

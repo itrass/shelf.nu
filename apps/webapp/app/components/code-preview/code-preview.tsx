@@ -452,14 +452,17 @@ export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
+                width: "100%",
               }}
             >
               <img
                 src={organizationLogoUrl}
                 alt="Organization logo"
                 style={{
-                  maxWidth: "80px",
-                  maxHeight: "30px",
+                  maxWidth: "100px",
+                  maxHeight: "40px",
+                  width: "auto",
+                  height: "auto",
                   objectFit: "contain",
                 }}
               />
@@ -566,14 +569,17 @@ export const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
+                width: "100%",
               }}
             >
               <img
                 src={organizationLogoUrl}
                 alt="Organization logo"
                 style={{
-                  maxWidth: "80px",
-                  maxHeight: "30px",
+                  maxWidth: "100px",
+                  maxHeight: "40px",
+                  width: "auto",
+                  height: "auto",
                   objectFit: "contain",
                 }}
               />
