@@ -31,6 +31,7 @@ interface Props {
   name?: Organization["name"];
   currency?: Organization["currency"];
   qrIdDisplayPreference?: Organization["qrIdDisplayPreference"];
+  sequentialIdPrefix?: Organization["sequentialIdPrefix"];
   className?: string;
 }
 
@@ -45,6 +46,12 @@ export const EditGeneralWorkspaceSettingsFormSchema = (
     logo: z.any().optional(),
     currency: z.custom<Currency>(),
     qrIdDisplayPreference: z.custom<QrIdDisplayPreference>(),
+    sequentialIdPrefix: z
+      .string()
+      .min(1, "Prefix is required")
+      .max(10, "Prefix must be 10 characters or less")
+      .regex(/^[A-Z]+$/, "Prefix must contain only uppercase letters")
+      .transform((val) => val.toUpperCase()),
     showShelfBranding: z
       .union([z.literal("on"), z.literal("off"), z.undefined()])
       .transform((value) => {
@@ -58,6 +65,7 @@ export const WorkspaceEditForms = ({
   name,
   currency,
   qrIdDisplayPreference,
+  sequentialIdPrefix,
   className,
 }: Props) => (
   <div className={tw("flex flex-col gap-3", className)}>
@@ -65,6 +73,7 @@ export const WorkspaceEditForms = ({
       name={name}
       currency={currency}
       qrIdDisplayPreference={qrIdDisplayPreference}
+      sequentialIdPrefix={sequentialIdPrefix}
     />
     <WorkspacePermissionsEditForm />
     <WorkspaceSSOEditForm />
@@ -75,6 +84,7 @@ const WorkspaceGeneralEditForms = ({
   name,
   currency,
   qrIdDisplayPreference,
+  sequentialIdPrefix,
   className,
 }: Props) => {
   const { organization, isPersonalWorkspace, canHideShelfBranding } =
@@ -184,7 +194,7 @@ const WorkspaceGeneralEditForms = ({
             subHeading={
               <p>
                 Choose which identifier is shown on QR code labels. You can
-                display either the QR code ID or the asset's SAM ID.
+                display either the QR code ID or the asset's Sequential ID.
               </p>
             }
           >
@@ -196,14 +206,42 @@ const WorkspaceGeneralEditForms = ({
           </FormRow>
         </div>
 
+        <div>
+          <FormRow
+            rowLabel={"Sequential ID Prefix"}
+            className={"border-b-0"}
+            subHeading={
+              <p>
+                Customize the prefix for asset sequential IDs (e.g., "SAM" in
+                SAM-0001). Must contain only uppercase letters.
+              </p>
+            }
+            required={zodFieldIsRequired(schema.shape.sequentialIdPrefix)}
+          >
+            <InnerLabel hideLg>Sequential ID Prefix</InnerLabel>
+            <Input
+              label="Sequential ID Prefix"
+              hideLabel
+              name={zo.fields.sequentialIdPrefix()}
+              disabled={disabled}
+              error={zo.errors.sequentialIdPrefix()?.message}
+              className="w-full"
+              defaultValue={sequentialIdPrefix || "SAM"}
+              placeholder="SAM"
+              required
+              maxLength={10}
+            />
+          </FormRow>
+        </div>
+
         <FormRow
           rowLabel={"Label branding"}
           className={"border-b-0"}
           subHeading={
             canHideShelfBranding ? (
               <p>
-                Control whether your organization logo appears on QR and barcode
-                labels.
+                Control whether the "Powered by Shelf.nu" footer appears on QR
+                and barcode labels.
               </p>
             ) : (
               <p>
@@ -215,7 +253,7 @@ const WorkspaceGeneralEditForms = ({
                 >
                   Upgrade your plan
                 </Button>{" "}
-                to display your organization logo on labels.
+                to hide Shelf branding on labels.
               </p>
             )
           }
@@ -243,14 +281,13 @@ const WorkspaceGeneralEditForms = ({
                   canHideShelfBranding ? "text-gray-700" : "text-gray-400"
                 )}
               >
-                Display organization logo on labels
+                Display Shelf branding on labels
               </label>
               <p
                 id="showShelfBranding-desc"
                 className="text-[14px] text-gray-600"
               >
-                Toggle your organization logo on downloadable QR and barcode
-                labels.
+                Toggle Shelf branding on downloadable QR and barcode labels.
               </p>
             </div>
           </div>

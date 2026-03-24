@@ -971,8 +971,21 @@ export async function createAsset({
 
   while (attempts < maxAttempts) {
     try {
-      // Generate sequential ID
-      const sequentialId = await getNextSequentialId(organizationId);
+      // Fetch organization to get the sequential ID prefix
+      const org = await db.organization.findUnique({
+        where: { id: organizationId },
+        select: { sequentialIdPrefix: true },
+      });
+
+      if (!org) {
+        throw new Error("Organization not found");
+      }
+
+      // Generate sequential ID with organization's prefix
+      const sequentialId = await getNextSequentialId(
+        organizationId,
+        org.sequentialIdPrefix
+      );
 
       /** User connection data */
       const user = {
@@ -1259,9 +1272,9 @@ export async function updateAsset({
 
     const trackedFieldUpdates = Boolean(
       typeof title !== "undefined" ||
-        typeof description !== "undefined" ||
-        typeof categoryId !== "undefined" ||
-        typeof valuation !== "undefined"
+      typeof description !== "undefined" ||
+      typeof categoryId !== "undefined" ||
+      typeof valuation !== "undefined"
     );
 
     const assetBeforeUpdate = await fetchAssetBeforeUpdate({

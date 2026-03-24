@@ -14,10 +14,11 @@ export async function action({ context, request }: ActionFunctionArgs) {
 
   try {
     // Get the current organization
-    const { organizationId } = await getSelectedOrganization({
-      userId,
-      request,
-    });
+    const { organizationId, currentOrganization } =
+      await getSelectedOrganization({
+        userId,
+        request,
+      });
 
     // Verify user has permission (owner or admin in org)
     const user = await getUserByID(userId, {
@@ -44,9 +45,11 @@ export async function action({ context, request }: ActionFunctionArgs) {
       );
     }
 
-    // Run the bulk sequential ID generation
-    const updatedCount =
-      await generateBulkSequentialIdsEfficient(organizationId);
+    // Run the bulk sequential ID generation with organization's prefix
+    const updatedCount = await generateBulkSequentialIdsEfficient(
+      organizationId,
+      currentOrganization.sequentialIdPrefix
+    );
 
     // Update the organization flag to mark migration as complete
     await updateOrganization({
@@ -56,9 +59,10 @@ export async function action({ context, request }: ActionFunctionArgs) {
     });
 
     // Handle different cases based on asset count
+    const prefix = currentOrganization.sequentialIdPrefix;
     const message =
       updatedCount === 0
-        ? "Sequential IDs are now enabled! New assets will automatically get sequential IDs (SAM-0001, SAM-0002, etc.)"
+        ? `Sequential IDs are now enabled! New assets will automatically get sequential IDs (${prefix}-0001, ${prefix}-0002, etc.)`
         : `Successfully generated sequential IDs for ${updatedCount} assets`;
 
     return data(

@@ -99,6 +99,7 @@ function baseOrganization() {
     type: OrganizationType.TEAM,
     currency: Currency.USD,
     qrIdDisplayPreference: "QR_ID" as const,
+    sequentialIdPrefix: "SAM",
     showShelfBranding: true,
     enabledSso: false,
     userId: "owner-1",
@@ -330,6 +331,7 @@ describe("settings.general action", () => {
     formData.append("name", "Test Org");
     formData.append("currency", Currency.USD);
     formData.append("qrIdDisplayPreference", "QR_ID");
+    formData.append("sequentialIdPrefix", "SAM");
     formData.append("showShelfBranding", "off");
 
     const request = new Request("http://localhost/settings/general", {
@@ -373,6 +375,7 @@ describe("settings.general action", () => {
     formData.append("name", "Test Org");
     formData.append("currency", Currency.USD);
     formData.append("qrIdDisplayPreference", "QR_ID");
+    formData.append("sequentialIdPrefix", "SAM");
     // Simulate unchecked switch (hidden input sends "off")
     formData.append("showShelfBranding", "off");
 
@@ -435,6 +438,7 @@ describe("settings.general action", () => {
     formData.append("name", "Test Org");
     formData.append("currency", Currency.USD);
     formData.append("qrIdDisplayPreference", "QR_ID");
+    formData.append("sequentialIdPrefix", "SAM");
     // Simulate checked switch (sends "on", overrides hidden "off")
     formData.append("showShelfBranding", "on");
 
@@ -494,6 +498,7 @@ describe("settings.general action", () => {
     formData.append("name", "Test Org");
     formData.append("currency", Currency.USD);
     formData.append("qrIdDisplayPreference", "QR_ID");
+    formData.append("sequentialIdPrefix", "SAM");
     formData.append("showShelfBranding", "off");
 
     const request = new Request("http://localhost/settings/general", {
@@ -552,6 +557,7 @@ describe("settings.general action", () => {
     formData.append("name", "Test Org");
     formData.append("currency", Currency.USD);
     formData.append("qrIdDisplayPreference", "QR_ID");
+    formData.append("sequentialIdPrefix", "SAM");
     formData.append("showShelfBranding", "off");
 
     const request = new Request("http://localhost/settings/general", {

@@ -80,7 +80,10 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
         organizationId,
         category: searchParams.get("category"),
       }),
-      estimateNextSequentialId(organizationId),
+      estimateNextSequentialId(
+        organizationId,
+        currentOrganization.sequentialIdPrefix
+      ),
     ]);
 
     return payload({

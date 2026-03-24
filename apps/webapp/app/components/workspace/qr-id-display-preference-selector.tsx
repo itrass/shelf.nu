@@ -27,7 +27,7 @@ const QR_ID_DISPLAY_OPTIONS = [
   },
   {
     value: "SAM_ID" as const,
-    label: "SAM ID",
+    label: "Sequential ID",
     description: "e.g., SAM-0001",
   },
 ];
