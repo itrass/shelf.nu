@@ -359,6 +359,11 @@ const ORGANIZATION_SELECT_FIELDS = {
   type: true,
   name: true,
   imageId: true,
+  image: {
+    select: {
+      id: true,
+    },
+  },
   userId: true,
   updatedAt: true,
   currency: true,
