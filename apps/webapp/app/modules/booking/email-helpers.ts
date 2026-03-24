@@ -103,7 +103,7 @@ export async function sendCheckinReminder(
 ) {
   const html = await bookingUpdatesTemplateString({
     booking,
-    heading: `Your booking is due for checkin in ${getTimeRemainingMessage(
+    heading: `Votre réservation doit être enregistrée dans ${getTimeRemainingMessage(
       new Date(booking.to!),
       new Date()
     )}.`,
@@ -113,14 +113,15 @@ export async function sendCheckinReminder(
 
   sendEmail({
     to: booking.custodianUser!.email,
-    subject: `🔔 Checkin reminder (${booking.name}) - shelf.nu`,
+    subject: `🔔 Rappel d'enregistrement (${booking.name}) - shelf.nu`,
     text: checkinReminderEmailContent({
       hints,
       bookingName: booking.name,
       assetsCount: assetCount,
       custodian:
-        `${booking.custodianUser!.firstName} ${booking.custodianUser
-          ?.lastName}` || (booking.custodianTeamMember?.name as string),
+        `${booking.custodianUser!.firstName} ${
+          booking.custodianUser?.lastName
+        }` || (booking.custodianTeamMember?.name as string),
       from: booking.from!,
       to: booking.to!,
       bookingId: booking.id,
@@ -254,9 +255,9 @@ export async function sendBookingUpdatedEmail({
 
     const custodian = booking.custodianUser
       ? `${booking.custodianUser.firstName} ${booking.custodianUser.lastName}`
-      : booking.custodianTeamMember?.name ?? "";
+      : (booking.custodianTeamMember?.name ?? "");
 
-    const subject = `📝 Booking updated (${booking.name}) - shelf.nu`;
+    const subject = `📝 Réservation mise à jour (${booking.name}) - shelf.nu`;
 
     const emailArgs: BasicEmailContentArgs = {
       bookingName: booking.name,
@@ -273,7 +274,7 @@ export async function sendBookingUpdatedEmail({
 
     const html = await bookingUpdatesTemplateString({
       booking,
-      heading: `Your booking "${booking.name}" has been updated`,
+      heading: `Votre réservation "${booking.name}" a été mise à jour`,
       assetCount: booking._count.assets,
       hints,
       changes,

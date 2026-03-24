@@ -418,7 +418,7 @@ export async function resolveUserAction(
 
       sendEmail({
         to: targetUser.email,
-        subject: `Your role in ${org.name} has been changed`,
+        subject: `Votre rôle dans ${org.name} a été modifié`,
         text: roleChangeEmailText({
           orgName: org.name,
           previousRole: previousRoleName,
