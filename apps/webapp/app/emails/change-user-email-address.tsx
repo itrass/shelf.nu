@@ -1,4 +1,5 @@
 import { Container, Head, Html, render, Text } from "@react-email/components";
+import { resolveUserDisplayName } from "~/utils/user";
 import { styles } from "./styles";
 
 /**
@@ -9,10 +10,13 @@ export const changeEmailAddressTextEmail = ({
   user,
 }: {
   otp: string;
-  user: { firstName?: string | null; lastName?: string | null; email: string };
-}) => `Bonjour ${user.firstName ? user.firstName : ""} ${
-  user.lastName ? user.lastName : ""
-},
+  user: {
+    firstName?: string | null;
+    lastName?: string | null;
+    displayName?: string | null;
+    email: string;
+  };
+}) => `Bonjour ${resolveUserDisplayName(user) || ""},
 
 Votre code de vérification pour le changement d'adresse email est : ${otp}
 
@@ -27,7 +31,12 @@ function ChangeEmailAddressHtmlEmailTemplate({
   user,
 }: {
   otp: string;
-  user: { firstName?: string | null; lastName?: string | null; email: string };
+  user: {
+    firstName?: string | null;
+    lastName?: string | null;
+    displayName?: string | null;
+    email: string;
+  };
 }) {
   return (
     <Html>
@@ -40,11 +49,7 @@ function ChangeEmailAddressHtmlEmailTemplate({
       <Container style={{ maxWidth: "100%" }}>
         <div style={{ paddingTop: "8px" }}>
           <Text style={{ ...styles.p }}>
-            Bonjour{" "}
-            {`${user.firstName ? user.firstName : ""} ${
-              user.lastName ? user.lastName : ""
-            }`}
-            ,
+            Bonjour {resolveUserDisplayName(user) || ""},
           </Text>
           <Text style={{ ...styles.p }}>
             Votre code de vérification pour le changement d'adresse email est :
@@ -79,5 +84,10 @@ function ChangeEmailAddressHtmlEmailTemplate({
  */
 export const changeEmailAddressHtmlEmail = (
   otp: string,
-  user: { firstName?: string | null; lastName?: string | null; email: string }
+  user: {
+    firstName?: string | null;
+    lastName?: string | null;
+    displayName?: string | null;
+    email: string;
+  }
 ) => render(<ChangeEmailAddressHtmlEmailTemplate otp={otp} user={user} />);

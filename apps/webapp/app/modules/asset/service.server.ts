@@ -881,6 +881,7 @@ export async function getAdvancedPaginatedAndFilterableAssets({
         ${assetQueryFragment({
           withBookings: getBookings || isUpcomingBookingsColumnVisible,
           withBarcodes: canUseBarcodes,
+          withCustomFieldDefinitions: false,
         })}
         ${customFieldSelect}
         ${assetQueryJoins}
@@ -1574,7 +1575,7 @@ export async function updateAsset({
         const [user, customFieldsFromForm] = await Promise.all([
           db.user.findFirst({
             where: { id: userId },
-            select: { firstName: true, lastName: true },
+            select: { firstName: true, lastName: true, displayName: true },
           }),
           db.customField.findMany({
             where: {
@@ -3004,6 +3005,7 @@ export async function updateAssetsWithBookingCustodians<T extends Asset>(
                 select: {
                   firstName: true,
                   lastName: true,
+                  displayName: true,
                   profilePicture: true,
                 },
               },
@@ -3164,31 +3166,29 @@ export async function refreshExpiredAssetImages<
         return null;
       }
 
-      const newMainImageUrl = await createSignedUrl({
-        filename: mainImagePath,
-        bucketName: "assets",
-      });
+      // Refresh main image and thumbnail in parallel — they're independent
+      // Supabase signed URL calls. This halves latency for assets with thumbnails.
+      const thumbnailPath = asset.thumbnailImage
+        ? extractStoragePath(asset.thumbnailImage, "assets")
+        : null;
 
-      // Refresh thumbnail if present — isolated so failure doesn't block mainImage
-      let newThumbnailUrl: string | null = null;
-      if (asset.thumbnailImage) {
-        try {
-          const thumbnailPath = extractStoragePath(
-            asset.thumbnailImage,
-            "assets"
-          );
-          if (thumbnailPath) {
-            newThumbnailUrl = await createSignedUrl({
+      const [newMainImageUrl, newThumbnailUrl] = await Promise.all([
+        createSignedUrl({
+          filename: mainImagePath,
+          bucketName: "assets",
+        }),
+        thumbnailPath
+          ? createSignedUrl({
               filename: thumbnailPath,
               bucketName: "assets",
-            });
-          }
-        } catch {
-          Logger.info(
-            `Failed to refresh thumbnail for asset ${asset.id}, proceeding with mainImage only`
-          );
-        }
-      }
+            }).catch(() => {
+              Logger.info(
+                `Failed to refresh thumbnail for asset ${asset.id}, proceeding with mainImage only`
+              );
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
 
       const newExpiration = oneDayFromNow();
 
@@ -3479,6 +3479,7 @@ export async function bulkCheckOutAssets({
           id: true,
           firstName: true,
           lastName: true,
+          displayName: true,
         } satisfies Prisma.UserSelect,
       }),
       db.teamMember.findUnique({
@@ -3490,6 +3491,7 @@ export async function bulkCheckOutAssets({
               id: true,
               firstName: true,
               lastName: true,
+              displayName: true,
             },
           },
         },
@@ -3517,6 +3519,13 @@ export async function bulkCheckOutAssets({
      * 2. Update status of all assets to IN_CUSTODY
      */
     await db.$transaction(async (tx) => {
+      /** Clean up any stale custody records that may exist despite AVAILABLE status.
+       * This prevents P2002 unique constraint violations when a previous
+       * release/checkin updated status but failed to delete the custody row. */
+      await tx.custody.deleteMany({
+        where: { assetId: { in: assets.map((a) => a.id) } },
+      });
+
       /** Creating custodies over assets */
       await tx.custody.createMany({
         data: assets.map((asset) => ({
@@ -3612,6 +3621,7 @@ export async function bulkCheckInAssets({
           id: true,
           firstName: true,
           lastName: true,
+          displayName: true,
         } satisfies Prisma.UserSelect,
       }),
     ]);
@@ -3735,6 +3745,7 @@ export async function bulkUpdateAssetLocation({
           id: true,
           firstName: true,
           lastName: true,
+          displayName: true,
         } satisfies Prisma.UserSelect,
       }),
     ]);
@@ -4108,6 +4119,7 @@ export async function relinkAssetQrCode({
         id: true,
         firstName: true,
         lastName: true,
+        displayName: true,
       } satisfies Prisma.UserSelect,
     }),
     db.asset.findFirst({
@@ -4294,9 +4306,11 @@ export async function getEntitiesWithSelectedValues({
       where: { organizationId, id: { notIn: selectedCategoryIds } },
       take: allSelectedEntries.includes("category") ? undefined : 12,
     }),
-    db.category.findMany({
-      where: { organizationId, id: { in: selectedCategoryIds } },
-    }),
+    selectedCategoryIds.length > 0
+      ? db.category.findMany({
+          where: { organizationId, id: { in: selectedCategoryIds } },
+        })
+      : Promise.resolve([]),
     db.category.count({ where: { organizationId } }),
     /** Categories end */
 
@@ -4313,17 +4327,19 @@ export async function getEntitiesWithSelectedValues({
       take: allSelectedEntries.includes("tag") ? undefined : 12,
       orderBy: { name: "asc" },
     }),
-    db.tag.findMany({
-      where: {
-        organizationId,
-        id: { in: selectedTagIds },
-        OR: [
-          { useFor: { isEmpty: true } },
-          { useFor: { has: TagUseFor.ASSET } },
-        ],
-      },
-      orderBy: { name: "asc" },
-    }),
+    selectedTagIds.length > 0
+      ? db.tag.findMany({
+          where: {
+            organizationId,
+            id: { in: selectedTagIds },
+            OR: [
+              { useFor: { isEmpty: true } },
+              { useFor: { has: TagUseFor.ASSET } },
+            ],
+          },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
     db.tag.count({
       where: {
         organizationId,
@@ -4340,9 +4356,11 @@ export async function getEntitiesWithSelectedValues({
       where: { organizationId, id: { notIn: selectedLocationIds } },
       take: allSelectedEntries.includes("location") ? undefined : 12,
     }),
-    db.location.findMany({
-      where: { organizationId, id: { in: selectedLocationIds } },
-    }),
+    selectedLocationIds.length > 0
+      ? db.location.findMany({
+          where: { organizationId, id: { in: selectedLocationIds } },
+        })
+      : Promise.resolve([]),
     db.location.count({ where: { organizationId } }),
     /** Location end */
   ]);

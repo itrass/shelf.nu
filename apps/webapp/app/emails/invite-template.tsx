@@ -10,6 +10,7 @@ import {
 import { config } from "~/config/shelf.config";
 import type { InviteWithInviterAndOrg } from "~/modules/invite/types";
 import { SERVER_URL, SUPPORT_EMAIL } from "~/utils/env";
+import { resolveUserDisplayName } from "~/utils/user";
 import { CustomEmailFooter } from "./components/custom-footer";
 import { LogoForEmail } from "./logo";
 import { styles } from "./styles";
@@ -41,13 +42,9 @@ export function InvitationEmailTemplate({
           <Text style={{ marginBottom: "24px", ...styles.p }}>
             Bonjour,
             <br />
-            {invite.inviter.firstName} {invite.inviter.lastName} vous invite à
-            rejoindre Shelf en tant que membre de l'espace de travail{" "}
-            <span style={{ color: "#101828", fontWeight: "600" }}>
-              "{invite.organization.name}"
-            </span>
-            . Cliquez sur le lien pour accepter
-            l'invitation :
+            {resolveUserDisplayName(invite.inviter)} vous invite à
+            rejoindre Shelf en tant que membre de l'espace de travail {invite.organization.name}
+            '. Cliquez sur le lien pour accepter l'invitation :
           </Text>
 
           {extraMessage ? (
@@ -68,8 +65,7 @@ export function InvitationEmailTemplate({
                   margin: "0 0 8px 0",
                 }}
               >
-                Message de {invite.inviter.firstName} {invite.inviter.lastName}{" "}
-                :
+                Message de {resolveUserDisplayName(invite.inviter)}:
               </Text>
 
               <Text
