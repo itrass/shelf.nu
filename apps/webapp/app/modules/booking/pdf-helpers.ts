@@ -165,18 +165,18 @@ export async function fetchAllPdfRelatedData(
     // Generate QR codes for kits (using similar logic as assets)
     const kitIdToQrCodeMap: Record<string, string> = {};
     const kits = Array.from(kitsMap.values());
+
+    const { generateCode } = await import("../qr/utils.server");
     const kitQrPromises = kits.map(async (kit) => {
       try {
         const qr = kit.qrCodes[0];
         if (qr) {
-          const qrCode = await import("../qr/service.server").then((mod) =>
-            mod.generateCode({
-              version: qr.version as any,
-              errorCorrection: qr.errorCorrection as any,
-              size: "small",
-              qr,
-            })
-          );
+          const qrCode = await generateCode({
+            version: qr.version as any,
+            errorCorrection: qr.errorCorrection as any,
+            size: "small",
+            qr,
+          });
           if (qrCode?.code?.src) {
             kitIdToQrCodeMap[kit.id] = qrCode.code.src;
           }

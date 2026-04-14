@@ -120,6 +120,7 @@ const mockKitData = {
   categoryId: "category-1",
   image: null,
   imageExpiration: null,
+  minimizeInPdf: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -131,6 +132,7 @@ const mockCreateParams = {
   organizationId: "org-1",
   categoryId: "category-1",
   locationId: null,
+  minimizeInPdf: false,
 };
 
 describe("createKit", () => {
@@ -177,6 +179,7 @@ describe("createKit", () => {
       ...mockCreateParams,
       categoryId: null,
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.create).toHaveBeenCalledWith({
@@ -215,6 +218,7 @@ describe("createKit", () => {
       ...mockCreateParams,
       barcodes,
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.create).toHaveBeenCalledWith({
@@ -320,6 +324,7 @@ describe("createKit", () => {
         ...mockCreateParams,
         barcodes,
         locationId: null,
+        minimizeInPdf: false,
       })
     ).rejects.toThrow();
   });
@@ -345,6 +350,7 @@ describe("updateKit", () => {
       organizationId: "org-1",
       categoryId: "category-2",
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.update).toHaveBeenCalledWith({
@@ -373,6 +379,7 @@ describe("updateKit", () => {
       organizationId: "org-1",
       categoryId: "uncategorized",
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.update).toHaveBeenCalledWith({
@@ -400,6 +407,7 @@ describe("updateKit", () => {
       organizationId: "org-1",
       categoryId: null,
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.update).toHaveBeenCalledWith({
@@ -426,6 +434,7 @@ describe("updateKit", () => {
       organizationId: "org-1",
       categoryId: undefined,
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.update).toHaveBeenCalledWith({
@@ -455,6 +464,7 @@ describe("updateKit", () => {
       organizationId: "org-1",
       barcodes,
       locationId: null,
+      minimizeInPdf: false,
     });
 
     expect(db.kit.update).toHaveBeenCalled();
@@ -941,6 +951,7 @@ describe("updateKitsWithBookingCustodians", () => {
       {
         ...mockKitData,
         locationId: null,
+        minimizeInPdf: false,
         id: "kit-2",
         status: KitStatus.IN_CUSTODY,
       },
@@ -957,6 +968,7 @@ describe("updateKitsWithBookingCustodians", () => {
       {
         ...mockKitData,
         locationId: null,
+        minimizeInPdf: false,
         id: "kit-co",
         status: KitStatus.CHECKED_OUT,
       },
@@ -1007,6 +1019,7 @@ describe("updateKitsWithBookingCustodians", () => {
       {
         ...mockKitData,
         locationId: null,
+        minimizeInPdf: false,
         id: "kit-co",
         status: KitStatus.CHECKED_OUT,
       },
@@ -1038,6 +1051,7 @@ describe("updateKitsWithBookingCustodians", () => {
       {
         ...mockKitData,
         locationId: null,
+        minimizeInPdf: false,
         id: "kit-co",
         status: KitStatus.CHECKED_OUT,
       },

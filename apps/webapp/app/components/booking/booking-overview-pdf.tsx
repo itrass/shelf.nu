@@ -324,7 +324,7 @@ const AssetsOrKitsRows = ({
                       imageId={group.kitImage}
                       alt={`Image of ${group.kitName}`}
                       className="!size-14 rounded object-cover"
-                      updatedAt={group.kitImageExpiration}
+                      updatedAt={group.kitImageExpiration ?? undefined}
                     />
                   ) : (
                     <div className="!size-14 rounded bg-gray-200" />
@@ -397,7 +397,7 @@ const AssetsOrKitsRows = ({
                         imageId={group.kitImage}
                         alt={`Image of ${group.kitName}`}
                         className="!size-10 rounded object-cover"
-                        updatedAt={group.kitImageExpiration}
+                        updatedAt={group.kitImageExpiration ?? undefined}
                       />
                     ) : null}
                     <span>
