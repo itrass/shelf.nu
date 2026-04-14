@@ -39,10 +39,17 @@ export const NewKitFormSchema = z.object({
   qrId: z.string().optional(),
   locationId: z.string().optional(),
   redirectTo: z.string().optional(),
+  minimizeInPdf: z
+    .string()
+    .optional()
+    .transform((val) => val === "on"),
 });
 
 type KitFormProps = Partial<
-  Pick<Kit, "name" | "description" | "categoryId" | "locationId">
+  Pick<
+    Kit,
+    "name" | "description" | "categoryId" | "locationId" | "minimizeInPdf"
+  >
 > & {
   className?: string;
   qrId?: string | null;
@@ -59,6 +66,7 @@ export default function KitsForm({
   barcodes,
   locationId,
   referer,
+  minimizeInPdf,
 }: KitFormProps) {
   const disabled = useDisabled();
   const { canUseBarcodes } = useBarcodePermissions();
@@ -271,6 +279,31 @@ export default function KitsForm({
               </div>
             )}
           />
+        </FormRow>
+
+        <FormRow
+          rowLabel="PDF Settings"
+          subHeading={
+            <p>
+              Control how this kit appears in booking PDF checklists. When
+              minimized, assets are listed in a compact format.
+            </p>
+          }
+          className="border-b-0 pb-[10px]"
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              name={zo.fields.minimizeInPdf()}
+              id="minimizeInPdf"
+              defaultChecked={minimizeInPdf ?? false}
+              disabled={disabled}
+              className="size-4 rounded border-gray-300"
+            />
+            <label htmlFor="minimizeInPdf" className="text-sm text-gray-700">
+              Minimize kit in PDF (show as single row with asset list)
+            </label>
+          </div>
         </FormRow>
 
         <FormRow rowLabel="Image" className="border-b-0 pt-[10px]">

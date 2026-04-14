@@ -163,6 +163,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
         organizationId,
         categoryId: parsedData.category ? parsedData.category : "uncategorized",
         barcodes,
+        minimizeInPdf: parsedData.minimizeInPdf,
         // Don't set locationId here - will be handled by updateKitLocation if changed
       }),
       updateKitImage({

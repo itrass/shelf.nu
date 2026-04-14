@@ -85,6 +85,7 @@ export async function createKit({
   categoryId,
   locationId,
   barcodes,
+  minimizeInPdf,
 }: Pick<
   Kit,
   | "name"
@@ -93,6 +94,7 @@ export async function createKit({
   | "organizationId"
   | "categoryId"
   | "locationId"
+  | "minimizeInPdf"
 > & {
   qrId?: Qr["id"];
   barcodes?: Pick<Barcode, "type" | "value">[];
@@ -145,6 +147,7 @@ export async function createKit({
       organization,
       qrCodes,
       category: categoryId ? { connect: { id: categoryId } } : undefined,
+      minimizeInPdf: minimizeInPdf ?? false,
     };
 
     /** If barcodes are passed, create them */
@@ -210,6 +213,7 @@ export async function updateKit({
   categoryId,
   barcodes,
   locationId,
+  minimizeInPdf,
 }: UpdateKitPayload) {
   try {
     const data: Prisma.KitUpdateInput = {
@@ -218,6 +222,7 @@ export async function updateKit({
       image,
       imageExpiration,
       status,
+      minimizeInPdf,
     };
 
     /** If uncategorized is passed, disconnect the category */

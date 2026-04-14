@@ -1286,6 +1286,7 @@ model Kit {
 
   image           String?
   imageExpiration DateTime?
+  minimizeInPdf   Boolean  @default(false)
 
   assets   Asset[]
   custody  KitCustody?

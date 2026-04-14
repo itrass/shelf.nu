@@ -12,6 +12,7 @@ export type UpdateKitPayload = Partial<
     | "imageExpiration"
     | "categoryId"
     | "locationId"
+    | "minimizeInPdf"
   >
 > & {
   id: Kit["id"];
