@@ -325,7 +325,14 @@ const AssetsOrKitsRows = ({
                   )}
                 </td>
                 <td className="border-r border-gray-300 p-2.5 text-sm font-semibold text-gray-700">
-                  {group.kitName} ({group.assets.length} assets)
+                  <div>
+                    {group.kitName} ({group.assets.length} assets)
+                  </div>
+                  {group.kitDescription && (
+                    <div className="mt-1 text-xs font-normal text-gray-600">
+                      {group.kitDescription}
+                    </div>
+                  )}
                 </td>
                 <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                   {group.assets[0]?.category?.name || ""}
