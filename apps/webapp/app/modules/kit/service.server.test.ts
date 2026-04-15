@@ -165,6 +165,7 @@ describe("createKit", () => {
           ],
         },
         category: { connect: { id: "category-1" } },
+        minimizeInPdf: false,
       },
     });
     expect(result).toEqual(mockKitData);
@@ -200,6 +201,7 @@ describe("createKit", () => {
           ],
         },
         category: undefined,
+        minimizeInPdf: false,
       },
     });
   });
@@ -253,6 +255,7 @@ describe("createKit", () => {
             },
           ],
         },
+        minimizeInPdf: false,
       },
     });
   });
@@ -301,6 +304,7 @@ describe("createKit", () => {
             },
           ],
         },
+        minimizeInPdf: false,
       },
     });
   });
@@ -362,6 +366,7 @@ describe("updateKit", () => {
         imageExpiration: undefined,
         status: KitStatus.AVAILABLE,
         category: { connect: { id: "category-2" } },
+        minimizeInPdf: false,
       },
     });
     expect(result).toEqual(updatedKit);
@@ -391,6 +396,7 @@ describe("updateKit", () => {
         imageExpiration: undefined,
         status: undefined,
         category: { disconnect: true },
+        minimizeInPdf: false,
       },
     });
   });
@@ -418,6 +424,7 @@ describe("updateKit", () => {
         image: undefined,
         imageExpiration: undefined,
         status: undefined,
+        minimizeInPdf: false,
       },
     });
   });
@@ -445,6 +452,7 @@ describe("updateKit", () => {
         image: undefined,
         imageExpiration: undefined,
         status: undefined,
+        minimizeInPdf: false,
       },
     });
   });
