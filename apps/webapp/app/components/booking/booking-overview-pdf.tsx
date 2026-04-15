@@ -253,7 +253,7 @@ const AssetsOrKitsRows = ({
 
   return (
     <>
-      {renderGroups.map((group, groupIdx) => {
+      {renderGroups.map((group) => {
         if (group.type === "asset") {
           // Render individual asset
           const asset = group.assets[0];
@@ -261,7 +261,7 @@ const AssetsOrKitsRows = ({
           return (
             <tr
               key={`asset-${asset.id}`}
-              className="align-top border-b border-gray-300"
+              className="border-b border-gray-300 align-top"
             >
               <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                 {globalIndex}
@@ -274,7 +274,7 @@ const AssetsOrKitsRows = ({
                     thumbnailImage: asset.thumbnailImage,
                     mainImageExpiration: asset.mainImageExpiration,
                   }}
-                  alt={`Image of ${asset.title}`}
+                  alt={asset.title}
                   className="!size-14 object-cover"
                 />
               </td>
@@ -309,7 +309,7 @@ const AssetsOrKitsRows = ({
           globalIndex++;
           return (
             <Fragment key={`kit-minimized-${group.kitId}`}>
-              <tr className="align-top border-b border-gray-300 bg-gray-50">
+              <tr className="border-b border-gray-300 bg-gray-50 align-top">
                 <td className="border-r border-gray-300 p-2.5 text-sm font-semibold text-gray-700">
                   {globalIndex}
                 </td>
@@ -317,7 +317,7 @@ const AssetsOrKitsRows = ({
                   {group.kitImage ? (
                     <img
                       src={group.kitImage}
-                      alt={`Image of ${group.kitName}`}
+                      alt={group.kitName || "Kit image"}
                       className="!size-14 rounded object-cover"
                     />
                   ) : (
@@ -389,7 +389,7 @@ const AssetsOrKitsRows = ({
                     {group.kitImage ? (
                       <img
                         src={group.kitImage}
-                        alt={`Image of ${group.kitName}`}
+                        alt={group.kitName || "Kit image"}
                         className="!size-10 rounded object-cover"
                       />
                     ) : null}
@@ -419,7 +419,7 @@ const AssetsOrKitsRows = ({
                 return (
                   <tr
                     key={asset.id}
-                    className="align-top border-b border-gray-300 bg-blue-50"
+                    className="border-b border-gray-300 bg-blue-50 align-top"
                   >
                     <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                       {globalIndex}
@@ -432,7 +432,7 @@ const AssetsOrKitsRows = ({
                           thumbnailImage: asset.thumbnailImage,
                           mainImageExpiration: asset.mainImageExpiration,
                         }}
-                        alt={`Image of ${asset.title}`}
+                        alt={asset.title}
                         className="!size-14 object-cover"
                       />
                     </td>
