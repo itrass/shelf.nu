@@ -12,6 +12,7 @@ import { validateBookingOwnership } from "~/utils/booking-authorization.server";
 import { calculateTotalValueOfAssets } from "~/utils/bookings";
 import { getClientHint } from "~/utils/client-hints";
 import { ShelfError } from "~/utils/error";
+import { Logger } from "~/utils/logger";
 import { groupAndSortAssetsByKit } from "./helpers";
 import { getBooking } from "./service.server";
 import { getQrCodeMaps } from "../qr/service.server";
@@ -35,7 +36,7 @@ export interface PdfDbResult {
     location: Pick<Location, "name"> | null;
     kit: Pick<
       Kit,
-      "name" | "minimizeInPdf" | "image" | "imageExpiration"
+      "name" | "minimizeInPdf" | "image" | "imageExpiration" | "description"
     > | null;
   })[];
   totalValue: string;
@@ -105,6 +106,7 @@ export async function fetchAllPdfRelatedData(
               minimizeInPdf: true,
               image: true,
               imageExpiration: true,
+              description: true,
             },
           },
         },
@@ -182,7 +184,13 @@ export async function fetchAllPdfRelatedData(
           }
         }
       } catch (error) {
-        console.error(`Error processing kit QR with id ${kit.id}:`, error);
+        Logger.error(
+          new ShelfError({
+            cause: error,
+            message: `Error processing kit QR with id ${kit.id}`,
+            label: "Booking",
+          })
+        );
       }
     });
     await Promise.all(kitQrPromises);
