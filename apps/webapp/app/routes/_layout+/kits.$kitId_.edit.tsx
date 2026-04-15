@@ -226,6 +226,7 @@ export default function KitEdit() {
           categoryId={kit.categoryId}
           barcodes={kit.barcodes}
           locationId={kit?.locationId}
+          minimizeInPdf={kit.minimizeInPdf}
           referer={referer}
         />
       </div>
