@@ -177,6 +177,7 @@ const AssetsOrKitsRows = ({
     type: "kit" | "asset";
     kitId?: string;
     kitName?: string;
+    kitDescription?: string | null;
     minimized?: boolean;
     kitImage?: string | null;
     kitImageExpiration?: Date | null;
@@ -199,6 +200,7 @@ const AssetsOrKitsRows = ({
             type: "kit",
             kitId: currentKitId,
             kitName: firstAsset.kit?.name,
+            kitDescription: firstAsset.kit?.description,
             minimized: firstAsset.kit?.minimizeInPdf,
             kitImage: firstAsset.kit?.image,
             kitImageExpiration: firstAsset.kit?.imageExpiration,
@@ -219,6 +221,7 @@ const AssetsOrKitsRows = ({
           type: "kit",
           kitId: currentKitId,
           kitName: firstAsset.kit?.name,
+          kitDescription: firstAsset.kit?.description,
           minimized: firstAsset.kit?.minimizeInPdf,
           kitImage: firstAsset.kit?.image,
           kitImageExpiration: firstAsset.kit?.imageExpiration,
@@ -238,6 +241,7 @@ const AssetsOrKitsRows = ({
       type: "kit",
       kitId: currentKitId,
       kitName: firstAsset.kit?.name,
+      kitDescription: firstAsset.kit?.description,
       minimized: firstAsset.kit?.minimizeInPdf,
       kitImage: firstAsset.kit?.image,
       kitImageExpiration: firstAsset.kit?.imageExpiration,
@@ -255,59 +259,50 @@ const AssetsOrKitsRows = ({
           const asset = group.assets[0];
           globalIndex++;
           return (
-            <Fragment key={`asset-${asset.id}`}>
-              <tr
-                className={tw(
-                  "align-top",
-                  !asset.description && "border-b border-gray-300"
-                )}
-              >
-                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  {globalIndex}
-                </td>
-                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  <AssetImage
-                    asset={{
-                      id: asset.id,
-                      mainImage: asset.mainImage,
-                      thumbnailImage: asset.thumbnailImage,
-                      mainImageExpiration: asset.mainImageExpiration,
-                    }}
-                    alt={`Image of ${asset.title}`}
-                    className="!size-14 object-cover"
-                  />
-                </td>
-                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  {asset.title}
-                </td>
-                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  {asset.category?.name}
-                </td>
-                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  {asset.location?.name}
-                </td>
-                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={assetIdToQrCodeMap[asset.id] || ""}
-                      alt="QR Code"
-                      className="size-14 object-cover"
-                    />
-                    <input type="checkbox" className="block size-5 border" />
+            <tr
+              key={`asset-${asset.id}`}
+              className="align-top border-b border-gray-300"
+            >
+              <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                {globalIndex}
+              </td>
+              <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                <AssetImage
+                  asset={{
+                    id: asset.id,
+                    mainImage: asset.mainImage,
+                    thumbnailImage: asset.thumbnailImage,
+                    mainImageExpiration: asset.mainImageExpiration,
+                  }}
+                  alt={`Image of ${asset.title}`}
+                  className="!size-14 object-cover"
+                />
+              </td>
+              <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                <div className="font-medium">{asset.title}</div>
+                {asset.description && (
+                  <div className="mt-1 text-xs text-gray-500">
+                    {asset.description}
                   </div>
-                </td>
-              </tr>
-              <When truthy={!!asset.description}>
-                <tr className="border-b border-gray-300 align-top">
-                  <td colSpan={6} className="m-2 p-2">
-                    <div className="flex items-start gap-4 bg-gray-100 p-4">
-                      <div className="w-20 text-xs">Asset Description</div>
-                      <div className="flex-1 text-sm">{asset.description}</div>
-                    </div>
-                  </td>
-                </tr>
-              </When>
-            </Fragment>
+                )}
+              </td>
+              <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                {asset.category?.name}
+              </td>
+              <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                {asset.location?.name}
+              </td>
+              <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={assetIdToQrCodeMap[asset.id] || ""}
+                    alt="QR Code"
+                    className="size-14 object-cover"
+                  />
+                  <input type="checkbox" className="block size-5 border" />
+                </div>
+              </td>
+            </tr>
           );
         } else if (group.minimized) {
           // Render minimized kit - single row with asset list in description
@@ -320,11 +315,10 @@ const AssetsOrKitsRows = ({
                 </td>
                 <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                   {group.kitImage ? (
-                    <Image
-                      imageId={group.kitImage}
+                    <img
+                      src={group.kitImage}
                       alt={`Image of ${group.kitName}`}
                       className="!size-14 rounded object-cover"
-                      updatedAt={group.kitImageExpiration ?? undefined}
                     />
                   ) : (
                     <div className="!size-14 rounded bg-gray-200" />
@@ -393,16 +387,22 @@ const AssetsOrKitsRows = ({
                 >
                   <div className="flex items-center gap-2">
                     {group.kitImage ? (
-                      <Image
-                        imageId={group.kitImage}
+                      <img
+                        src={group.kitImage}
                         alt={`Image of ${group.kitName}`}
                         className="!size-10 rounded object-cover"
-                        updatedAt={group.kitImageExpiration ?? undefined}
                       />
                     ) : null}
-                    <span>
-                      Kit: {group.kitName} ({group.assets.length} assets)
-                    </span>
+                    <div className="flex-1">
+                      <div>
+                        Kit: {group.kitName} ({group.assets.length} assets)
+                      </div>
+                      {group.kitDescription && (
+                        <div className="mt-1 text-xs font-normal text-gray-600">
+                          {group.kitDescription}
+                        </div>
+                      )}
+                    </div>
                     {group.kitId && kitIdToQrCodeMap[group.kitId] && (
                       <img
                         src={kitIdToQrCodeMap[group.kitId]}
@@ -417,66 +417,53 @@ const AssetsOrKitsRows = ({
               {group.assets.map((asset) => {
                 globalIndex++;
                 return (
-                  <Fragment key={asset.id}>
-                    <tr
-                      className={tw(
-                        "align-top",
-                        !asset.description && "border-b border-gray-300"
-                      )}
-                    >
-                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                        {globalIndex}
-                      </td>
-                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                        <AssetImage
-                          asset={{
-                            id: asset.id,
-                            mainImage: asset.mainImage,
-                            thumbnailImage: asset.thumbnailImage,
-                            mainImageExpiration: asset.mainImageExpiration,
-                          }}
-                          alt={`Image of ${asset.title}`}
-                          className="!size-14 object-cover"
-                        />
-                      </td>
-                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                        <div className="ml-4">{asset.title}</div>
-                      </td>
-                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                        {asset.category?.name}
-                      </td>
-                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                        {asset.location?.name}
-                      </td>
-                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={assetIdToQrCodeMap[asset.id] || ""}
-                            alt="QR Code"
-                            className="size-14 object-cover"
-                          />
-                          <input
-                            type="checkbox"
-                            className="block size-5 border"
-                          />
+                  <tr
+                    key={asset.id}
+                    className="align-top border-b border-gray-300 bg-blue-50"
+                  >
+                    <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                      {globalIndex}
+                    </td>
+                    <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                      <AssetImage
+                        asset={{
+                          id: asset.id,
+                          mainImage: asset.mainImage,
+                          thumbnailImage: asset.thumbnailImage,
+                          mainImageExpiration: asset.mainImageExpiration,
+                        }}
+                        alt={`Image of ${asset.title}`}
+                        className="!size-14 object-cover"
+                      />
+                    </td>
+                    <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                      <div className="ml-4 font-medium">{asset.title}</div>
+                      {asset.description && (
+                        <div className="ml-4 mt-1 text-xs text-gray-500">
+                          {asset.description}
                         </div>
-                      </td>
-                    </tr>
-                    <When truthy={!!asset.description}>
-                      <tr className="border-b border-gray-300 align-top">
-                        <td colSpan={6} className="m-2 p-2">
-                          <div className="ml-4 flex items-start gap-4 bg-gray-100 p-4">
-                            <div className="w-20 text-xs">
-                              Asset Description
-                            </div>
-                            <div className="flex-1 text-sm">
-                              {asset.description}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    </When>
-                  </Fragment>
+                      )}
+                    </td>
+                    <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                      {asset.category?.name}
+                    </td>
+                    <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                      {asset.location?.name}
+                    </td>
+                    <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={assetIdToQrCodeMap[asset.id] || ""}
+                          alt="QR Code"
+                          className="size-14 object-cover"
+                        />
+                        <input
+                          type="checkbox"
+                          className="block size-5 border"
+                        />
+                      </div>
+                    </td>
+                  </tr>
                 );
               })}
             </Fragment>

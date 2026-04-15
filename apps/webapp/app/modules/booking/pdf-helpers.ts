@@ -35,7 +35,7 @@ export interface PdfDbResult {
     location: Pick<Location, "name"> | null;
     kit: Pick<
       Kit,
-      "name" | "minimizeInPdf" | "image" | "imageExpiration"
+      "name" | "minimizeInPdf" | "image" | "imageExpiration" | "description"
     > | null;
   })[];
   totalValue: string;
@@ -105,6 +105,7 @@ export async function fetchAllPdfRelatedData(
               minimizeInPdf: true,
               image: true,
               imageExpiration: true,
+              description: true,
             },
           },
         },
