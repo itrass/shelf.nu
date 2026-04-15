@@ -115,6 +115,7 @@ export async function action({ context, request }: LoaderFunctionArgs) {
       categoryId: payload.category ?? null,
       barcodes,
       locationId: payload.locationId ?? null,
+      minimizeInPdf: payload.minimizeInPdf ?? false,
     });
 
     await updateKitImage({

@@ -33,7 +33,10 @@ export interface PdfDbResult {
   assets: (Asset & {
     category: Pick<Category, "name"> | null;
     location: Pick<Location, "name"> | null;
-    kit: Pick<Kit, "name"> | null;
+    kit: Pick<
+      Kit,
+      "name" | "minimizeInPdf" | "image" | "imageExpiration"
+    > | null;
   })[];
   totalValue: string;
   organization: Pick<
@@ -41,6 +44,7 @@ export interface PdfDbResult {
     "id" | "name" | "imageId" | "currency" | "updatedAt"
   >;
   assetIdToQrCodeMap: Record<string, string>;
+  kitIdToQrCodeMap: Record<string, string>;
   from?: string;
   to?: string;
   originalFrom?: string;
@@ -96,7 +100,11 @@ export async function fetchAllPdfRelatedData(
           },
           kit: {
             select: {
+              id: true,
               name: true,
+              minimizeInPdf: true,
+              image: true,
+              imageExpiration: true,
             },
           },
         },
@@ -135,6 +143,50 @@ export async function fetchAllPdfRelatedData(
       organizationId,
       size: "small",
     });
+
+    // Extract unique kits from sorted assets
+    const kitsMap = new Map<
+      string,
+      { id: string; name: string; qrCodes: any[] }
+    >();
+    for (const asset of sortedAssets) {
+      if (asset.kit && asset.kitId && !kitsMap.has(asset.kitId)) {
+        // Fetch kit with qrCodes to generate QR code map
+        const kitWithQr = await db.kit.findUnique({
+          where: { id: asset.kitId },
+          select: { id: true, name: true, qrCodes: true },
+        });
+        if (kitWithQr) {
+          kitsMap.set(asset.kitId, kitWithQr);
+        }
+      }
+    }
+
+    // Generate QR codes for kits (using similar logic as assets)
+    const kitIdToQrCodeMap: Record<string, string> = {};
+    const kits = Array.from(kitsMap.values());
+
+    const { generateCode } = await import("../qr/utils.server");
+    const kitQrPromises = kits.map(async (kit) => {
+      try {
+        const qr = kit.qrCodes[0];
+        if (qr) {
+          const qrCode = await generateCode({
+            version: qr.version as any,
+            errorCorrection: qr.errorCorrection as any,
+            size: "small",
+            qr,
+          });
+          if (qrCode?.code?.src) {
+            kitIdToQrCodeMap[kit.id] = qrCode.code.src;
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing kit QR with id ${kit.id}:`, error);
+      }
+    });
+    await Promise.all(kitQrPromises);
+
     return {
       booking,
       assets: sortedAssets,
@@ -145,6 +197,7 @@ export async function fetchAllPdfRelatedData(
       }),
       organization,
       assetIdToQrCodeMap,
+      kitIdToQrCodeMap,
     };
   } catch (cause) {
     throw new ShelfError({

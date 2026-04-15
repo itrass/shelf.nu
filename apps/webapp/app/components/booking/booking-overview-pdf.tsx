@@ -159,6 +159,334 @@ export const BookingOverviewPDF = ({
   );
 };
 
+/**
+ * Component to render asset rows, grouping by kit when applicable
+ * Handles minimized kits (single row with asset list) and expanded kits (indented assets)
+ */
+const AssetsOrKitsRows = ({
+  assets,
+  assetIdToQrCodeMap,
+  kitIdToQrCodeMap,
+}: {
+  assets: PdfDbResult["assets"];
+  assetIdToQrCodeMap: Record<string, string>;
+  kitIdToQrCodeMap: Record<string, string>;
+}) => {
+  // Group assets by kit for rendering
+  const renderGroups: Array<{
+    type: "kit" | "asset";
+    kitId?: string;
+    kitName?: string;
+    minimized?: boolean;
+    kitImage?: string | null;
+    kitImageExpiration?: Date | null;
+    assets: PdfDbResult["assets"];
+  }> = [];
+
+  let currentKitId: string | null = null;
+  let currentKitAssets: PdfDbResult["assets"] = [];
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+
+    if (asset.kitId && asset.kit) {
+      // Asset belongs to a kit
+      if (currentKitId !== asset.kitId) {
+        // New kit group - flush previous if any
+        if (currentKitId && currentKitAssets.length > 0) {
+          const firstAsset = currentKitAssets[0];
+          renderGroups.push({
+            type: "kit",
+            kitId: currentKitId,
+            kitName: firstAsset.kit?.name,
+            minimized: firstAsset.kit?.minimizeInPdf,
+            kitImage: firstAsset.kit?.image,
+            kitImageExpiration: firstAsset.kit?.imageExpiration,
+            assets: currentKitAssets,
+          });
+        }
+        currentKitId = asset.kitId;
+        currentKitAssets = [asset];
+      } else {
+        currentKitAssets.push(asset);
+      }
+    } else {
+      // Individual asset (no kit)
+      // Flush any pending kit first
+      if (currentKitId && currentKitAssets.length > 0) {
+        const firstAsset = currentKitAssets[0];
+        renderGroups.push({
+          type: "kit",
+          kitId: currentKitId,
+          kitName: firstAsset.kit?.name,
+          minimized: firstAsset.kit?.minimizeInPdf,
+          kitImage: firstAsset.kit?.image,
+          kitImageExpiration: firstAsset.kit?.imageExpiration,
+          assets: currentKitAssets,
+        });
+        currentKitId = null;
+        currentKitAssets = [];
+      }
+      renderGroups.push({ type: "asset", assets: [asset] });
+    }
+  }
+
+  // Flush any remaining kit
+  if (currentKitId && currentKitAssets.length > 0) {
+    const firstAsset = currentKitAssets[0];
+    renderGroups.push({
+      type: "kit",
+      kitId: currentKitId,
+      kitName: firstAsset.kit?.name,
+      minimized: firstAsset.kit?.minimizeInPdf,
+      kitImage: firstAsset.kit?.image,
+      kitImageExpiration: firstAsset.kit?.imageExpiration,
+      assets: currentKitAssets,
+    });
+  }
+
+  let globalIndex = 0;
+
+  return (
+    <>
+      {renderGroups.map((group, groupIdx) => {
+        if (group.type === "asset") {
+          // Render individual asset
+          const asset = group.assets[0];
+          globalIndex++;
+          return (
+            <Fragment key={`asset-${asset.id}`}>
+              <tr
+                className={tw(
+                  "align-top",
+                  !asset.description && "border-b border-gray-300"
+                )}
+              >
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {globalIndex}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  <AssetImage
+                    asset={{
+                      id: asset.id,
+                      mainImage: asset.mainImage,
+                      thumbnailImage: asset.thumbnailImage,
+                      mainImageExpiration: asset.mainImageExpiration,
+                    }}
+                    alt={`Image of ${asset.title}`}
+                    className="!size-14 object-cover"
+                  />
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {asset.title}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {asset.category?.name}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {asset.location?.name}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={assetIdToQrCodeMap[asset.id] || ""}
+                      alt="QR Code"
+                      className="size-14 object-cover"
+                    />
+                    <input type="checkbox" className="block size-5 border" />
+                  </div>
+                </td>
+              </tr>
+              <When truthy={!!asset.description}>
+                <tr className="border-b border-gray-300 align-top">
+                  <td colSpan={6} className="m-2 p-2">
+                    <div className="flex items-start gap-4 bg-gray-100 p-4">
+                      <div className="w-20 text-xs">Asset Description</div>
+                      <div className="flex-1 text-sm">{asset.description}</div>
+                    </div>
+                  </td>
+                </tr>
+              </When>
+            </Fragment>
+          );
+        } else if (group.minimized) {
+          // Render minimized kit - single row with asset list in description
+          globalIndex++;
+          return (
+            <Fragment key={`kit-minimized-${group.kitId}`}>
+              <tr className="align-top border-b border-gray-300 bg-gray-50">
+                <td className="border-r border-gray-300 p-2.5 text-sm font-semibold text-gray-700">
+                  {globalIndex}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {group.kitImage ? (
+                    <Image
+                      imageId={group.kitImage}
+                      alt={`Image of ${group.kitName}`}
+                      className="!size-14 rounded object-cover"
+                      updatedAt={group.kitImageExpiration ?? undefined}
+                    />
+                  ) : (
+                    <div className="!size-14 rounded bg-gray-200" />
+                  )}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm font-semibold text-gray-700">
+                  {group.kitName} ({group.assets.length} assets)
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {group.assets[0]?.category?.name || ""}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  {group.assets[0]?.location?.name || ""}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                  <div className="flex items-center gap-3">
+                    {group.kitId && kitIdToQrCodeMap[group.kitId] && (
+                      <img
+                        src={kitIdToQrCodeMap[group.kitId]}
+                        alt="Kit QR Code"
+                        className="size-14 object-cover"
+                      />
+                    )}
+                    <input type="checkbox" className="block size-5 border" />
+                  </div>
+                </td>
+              </tr>
+              {/* Asset list in smaller font */}
+              <tr className="border-b border-gray-300 bg-gray-50">
+                <td colSpan={6} className="p-2">
+                  <div className="ml-8 space-y-1 text-xs text-gray-600">
+                    {group.assets.map((asset, idx) => (
+                      <div key={asset.id} className="flex items-start gap-2">
+                        <span className="font-mono">{idx + 1}.</span>
+                        <div className="flex-1">
+                          <div className="font-medium">{asset.title}</div>
+                          {asset.description && (
+                            <div className="mt-0.5 text-gray-500">
+                              {asset.description}
+                            </div>
+                          )}
+                        </div>
+                        {assetIdToQrCodeMap[asset.id] && (
+                          <img
+                            src={assetIdToQrCodeMap[asset.id]}
+                            alt={`QR for ${asset.title}`}
+                            className="size-8 object-cover"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            </Fragment>
+          );
+        } else {
+          // Render expanded kit - kit header + indented assets
+          return (
+            <Fragment key={`kit-expanded-${group.kitId}`}>
+              {/* Kit header row */}
+              <tr className="border-b border-gray-300 bg-blue-50">
+                <td
+                  colSpan={6}
+                  className="border-r border-gray-300 p-2.5 text-sm font-semibold text-blue-900"
+                >
+                  <div className="flex items-center gap-2">
+                    {group.kitImage ? (
+                      <Image
+                        imageId={group.kitImage}
+                        alt={`Image of ${group.kitName}`}
+                        className="!size-10 rounded object-cover"
+                        updatedAt={group.kitImageExpiration ?? undefined}
+                      />
+                    ) : null}
+                    <span>
+                      Kit: {group.kitName} ({group.assets.length} assets)
+                    </span>
+                    {group.kitId && kitIdToQrCodeMap[group.kitId] && (
+                      <img
+                        src={kitIdToQrCodeMap[group.kitId]}
+                        alt="Kit QR Code"
+                        className="ml-auto size-10 object-cover"
+                      />
+                    )}
+                  </div>
+                </td>
+              </tr>
+              {/* Indented asset rows */}
+              {group.assets.map((asset) => {
+                globalIndex++;
+                return (
+                  <Fragment key={asset.id}>
+                    <tr
+                      className={tw(
+                        "align-top",
+                        !asset.description && "border-b border-gray-300"
+                      )}
+                    >
+                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                        {globalIndex}
+                      </td>
+                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                        <AssetImage
+                          asset={{
+                            id: asset.id,
+                            mainImage: asset.mainImage,
+                            thumbnailImage: asset.thumbnailImage,
+                            mainImageExpiration: asset.mainImageExpiration,
+                          }}
+                          alt={`Image of ${asset.title}`}
+                          className="!size-14 object-cover"
+                        />
+                      </td>
+                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                        <div className="ml-4">{asset.title}</div>
+                      </td>
+                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                        {asset.category?.name}
+                      </td>
+                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                        {asset.location?.name}
+                      </td>
+                      <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={assetIdToQrCodeMap[asset.id] || ""}
+                            alt="QR Code"
+                            className="size-14 object-cover"
+                          />
+                          <input
+                            type="checkbox"
+                            className="block size-5 border"
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                    <When truthy={!!asset.description}>
+                      <tr className="border-b border-gray-300 align-top">
+                        <td colSpan={6} className="m-2 p-2">
+                          <div className="ml-4 flex items-start gap-4 bg-gray-100 p-4">
+                            <div className="w-20 text-xs">
+                              Asset Description
+                            </div>
+                            <div className="flex-1 text-sm">
+                              {asset.description}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </When>
+                  </Fragment>
+                );
+              })}
+            </Fragment>
+          );
+        }
+      })}
+    </>
+  );
+};
+
 const BookingPDFPreview = ({
   componentRef,
   pdfMeta,
@@ -168,8 +496,14 @@ const BookingPDFPreview = ({
 }) => {
   if (!pdfMeta) return null;
 
-  const { booking, organization, assets, assetIdToQrCodeMap, totalValue } =
-    pdfMeta;
+  const {
+    booking,
+    organization,
+    assets,
+    assetIdToQrCodeMap,
+    kitIdToQrCodeMap,
+    totalValue,
+  } = pdfMeta;
   const custodianName = booking.custodianUser
     ? `${resolveUserDisplayName(booking.custodianUser)} <${
         booking.custodianUser.email
@@ -321,9 +655,6 @@ const BookingPDFPreview = ({
                 Name
               </th>
               <th className="w-24 border-b border-r border-gray-300 p-2.5 text-left text-xs font-medium">
-                Kit
-              </th>
-              <th className="w-24 border-b border-r border-gray-300 p-2.5 text-left text-xs font-medium">
                 Category
               </th>
               <th className="w-24 border-b border-r border-gray-300 p-2.5 text-left text-xs font-medium">
@@ -335,68 +666,11 @@ const BookingPDFPreview = ({
             </tr>
           </thead>
           <tbody>
-            {assets.map((asset, index) => (
-              <Fragment key={asset.id}>
-                <tr
-                  key={asset.id}
-                  className={tw(
-                    "align-top",
-                    !asset.description && "border-b border-gray-300"
-                  )}
-                >
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {index + 1}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    <AssetImage
-                      asset={{
-                        id: asset.id,
-                        mainImage: asset.mainImage,
-                        thumbnailImage: asset.thumbnailImage,
-                        mainImageExpiration: asset.mainImageExpiration,
-                      }}
-                      alt={`Image of ${asset.title}`}
-                      className="!size-14 object-cover"
-                    />
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.title}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.kit?.name}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.category?.name}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.location?.name}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={assetIdToQrCodeMap[asset.id] || ""}
-                        alt="QR Code"
-                        className="size-14 object-cover"
-                      />
-                      <input type="checkbox" className="block size-5 border" />
-                    </div>
-                  </td>
-                </tr>
-
-                <When truthy={!!asset.description}>
-                  <tr className="border-b border-gray-300 align-top">
-                    <td colSpan={7} className="m-2 p-2">
-                      <div className="flex items-start gap-4 bg-gray-100 p-4">
-                        <div className="w-20 text-xs">Asset Description</div>
-                        <div className="flex-1 text-sm">
-                          {asset.description}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                </When>
-              </Fragment>
-            ))}
+            <AssetsOrKitsRows
+              assets={assets}
+              assetIdToQrCodeMap={assetIdToQrCodeMap}
+              kitIdToQrCodeMap={kitIdToQrCodeMap}
+            />
           </tbody>
         </table>
       </div>

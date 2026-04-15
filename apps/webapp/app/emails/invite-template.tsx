@@ -42,8 +42,9 @@ export function InvitationEmailTemplate({
           <Text style={{ marginBottom: "24px", ...styles.p }}>
             Bonjour,
             <br />
-            {resolveUserDisplayName(invite.inviter)} vous invite à
-            rejoindre Shelf en tant que membre de l'espace de travail {invite.organization.name}
+            {resolveUserDisplayName(invite.inviter)} vous invite à rejoindre
+            Shelf en tant que membre de l'espace de travail{" "}
+            {invite.organization.name}
             '. Cliquez sur le lien pour accepter l'invitation :
           </Text>
 
