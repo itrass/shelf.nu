@@ -1,10 +1,10 @@
 import type { Organization, Prisma, TeamMember } from "@prisma/client";
-import { BookingStatus } from "@prisma/client";
+import { BookingStatus, OrganizationRoles } from "@prisma/client";
 import type { LoaderFunctionArgs } from "react-router";
 import { db } from "~/database/db.server";
 import { updateCookieWithPerPage } from "~/utils/cookies.server";
 import type { ErrorLabel } from "~/utils/error";
-import { ShelfError } from "~/utils/error";
+import { isNotFoundError, ShelfError } from "~/utils/error";
 import { getCurrentSearchParams } from "~/utils/http.server";
 import { ALL_SELECTED_KEY, getParamsValues } from "~/utils/list";
 import { Logger } from "~/utils/logger";
@@ -634,6 +634,9 @@ export async function getTeamMember({
       additionalData: { id, organizationId },
       label,
       status: 404,
+      // Suppress only true Prisma not-found (P2025); let DB / connectivity
+      // failures bubble up to Sentry.
+      shouldBeCaptured: !isNotFoundError(cause),
     });
   }
 }
@@ -787,23 +790,22 @@ export async function getTeamMembersForNotify({
   try {
     const idsToExclude = excludeTeamMemberIds ?? [];
 
-    // Two-step query: first get admin/owner user IDs, then fetch
-    // their team members. Needed because Prisma doesn't support nested
-    // relation filters in the `where` clause with `include`.
-    const adminUserOrgs = await db.userOrganization.findMany({
-      where: {
-        organizationId,
-        roles: { hasSome: ["ADMIN", "OWNER"] },
-      },
-      select: { userId: true },
-    });
-    const adminUserIds = adminUserOrgs.map((uo) => uo.userId);
-
+    // Single query using a nested relation filter to find team members
+    // whose linked user has an admin/owner role in this organization.
     const teamMembersForNotify = await db.teamMember.findMany({
       where: {
         organizationId,
         deletedAt: null,
-        userId: { in: adminUserIds },
+        user: {
+          userOrganizations: {
+            some: {
+              organizationId,
+              roles: {
+                hasSome: [OrganizationRoles.ADMIN, OrganizationRoles.OWNER],
+              },
+            },
+          },
+        },
         ...(idsToExclude?.length ? { id: { notIn: idsToExclude } } : {}),
       },
       include: {
