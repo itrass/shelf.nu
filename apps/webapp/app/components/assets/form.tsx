@@ -91,6 +91,7 @@ type Props = Partial<
   tags?: Tag[];
   barcodes?: Pick<Barcode, "id" | "value" | "type">[];
   referer?: string | null;
+  sequentialIdPrefix?: string;
 };
 
 export const AssetForm = ({
@@ -108,6 +109,7 @@ export const AssetForm = ({
   tags,
   barcodes,
   referer,
+  sequentialIdPrefix = "SAM",
 }: Props) => {
   const navigation = useNavigation();
   const { canUseBarcodes } = useBarcodePermissions();
@@ -262,9 +264,9 @@ export const AssetForm = ({
                 hideLabel
                 name="sequentialIdPrefix"
                 disabled={true}
-                value="SAM"
+                value={sequentialIdPrefix}
                 className="w-20 text-center"
-                placeholder="SAM"
+                placeholder={sequentialIdPrefix}
               />
             </div>
             <span className="font-medium text-gray-400">-</span>

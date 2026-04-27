@@ -97,6 +97,7 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
       currency: currentOrganization?.currency,
       customFields,
       nextSequentialId,
+      sequentialIdPrefix: currentOrganization.sequentialIdPrefix,
     });
   } catch (cause) {
     const reason = makeShelfError(cause, { userId });
@@ -253,7 +254,8 @@ export async function action({ context, request }: LoaderFunctionArgs) {
 
 export default function NewAssetPage() {
   const title = useAtomValue(dynamicTitleAtom);
-  const { nextSequentialId } = useLoaderData<typeof loader>();
+  const { nextSequentialId, sequentialIdPrefix } =
+    useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
   const qrId = searchParams.get("qrId");
 
@@ -268,6 +270,7 @@ export default function NewAssetPage() {
           qrId={qrId}
           categoryId={categoryFromUrl}
           sequentialId={nextSequentialId}
+          sequentialIdPrefix={sequentialIdPrefix}
         />
       </div>
     </div>
