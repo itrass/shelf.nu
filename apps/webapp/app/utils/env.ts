@@ -45,6 +45,7 @@ declare global {
       ENABLE_PREMIUM_FEATURES: string;
       DISABLE_SIGNUP: string;
       DISABLE_SSO: string;
+      DEFAULT_SSO_DOMAIN: string;
       INVITE_TOKEN_SECRET: string;
       SMTP_PWD: string;
       SMTP_HOST: string;
@@ -284,6 +285,11 @@ export const DISABLE_SSO =
     isSecret: false,
     isRequired: false,
   }) === "true" || false;
+
+export const DEFAULT_SSO_DOMAIN = getEnv("DEFAULT_SSO_DOMAIN", {
+  isSecret: false,
+  isRequired: false,
+});
 
 export const SEND_ONBOARDING_EMAIL =
   getEnv("SEND_ONBOARDING_EMAIL", {

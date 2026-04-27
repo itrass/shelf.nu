@@ -29,6 +29,7 @@ import {
 } from "~/modules/organization/context.server";
 import { appendToMetaTitle } from "~/utils/append-to-meta-title";
 import { setCookie } from "~/utils/cookies.server";
+import { DEFAULT_SSO_DOMAIN } from "~/utils/env";
 import {
   ShelfError,
   isLikeShelfError,
@@ -55,7 +56,15 @@ export function loader({ context }: LoaderFunctionArgs) {
     return redirect("/assets");
   }
 
-  return data(payload({ title, subHeading, disableSignup, disableSSO }));
+  return data(
+    payload({
+      title,
+      subHeading,
+      disableSignup,
+      disableSSO,
+      defaultSsoDomain: DEFAULT_SSO_DOMAIN,
+    })
+  );
 }
 
 const LoginFormSchema = z.object({
@@ -167,7 +176,8 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => [
 ];
 
 export default function IndexLoginForm() {
-  const { disableSignup, disableSSO } = useLoaderData<typeof loader>();
+  const { disableSignup, disableSSO, defaultSsoDomain } =
+    useLoaderData<typeof loader>();
   const zo = useZorm("NewQuestionWizardScreen", LoginFormSchema);
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("redirectTo") ?? undefined;
@@ -246,7 +256,9 @@ export default function IndexLoginForm() {
       {!disableSSO && (
         <div className="mt-6 text-center">
           <Button variant="link" to="/sso-login">
-            Login with SSO
+            {defaultSsoDomain
+              ? `Login with ${defaultSsoDomain}`
+              : "Login with SSO"}
           </Button>
         </div>
       )}
