@@ -711,14 +711,18 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
       });
     }
 
-    // Form data is already extracted above and will be reused
-    const basicBookingInfo = await db.booking.findUniqueOrThrow({
-      where: { id },
-      select: { id: true, status: true, from: true, to: true },
-    });
-    const workingHours = await getWorkingHoursForOrganization(organizationId);
-    const bookingSettings =
-      await getBookingSettingsForOrganization(organizationId);
+    // Form data is already extracted above and will be reused.
+    // Booking lookup, working hours, and booking settings are independent — fetch in parallel
+    const [basicBookingInfo, workingHours, bookingSettings] = await Promise.all(
+      [
+        db.booking.findUniqueOrThrow({
+          where: { id },
+          select: { id: true, status: true, from: true, to: true },
+        }),
+        getWorkingHoursForOrganization(organizationId),
+        getBookingSettingsForOrganization(organizationId),
+      ]
+    );
     switch (intent) {
       case "save": {
         const hints = getHints(request);
@@ -1142,15 +1146,13 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
           }
         );
 
-        const newEndDate = DateTime.fromFormat(endDate, DATE_TIME_FORMAT, {
-          zone: hints.timeZone,
-        }).toJSDate();
-
+        // `endDate` is already a zoned `Date` produced by the schema's
+        // `coerceLocalDate(timeZone)`, so no further parsing is needed here.
         await extendBooking({
           id,
           organizationId,
           hints,
-          newEndDate,
+          newEndDate: endDate,
           userId,
           role,
         });

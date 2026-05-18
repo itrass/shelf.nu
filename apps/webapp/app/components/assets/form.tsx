@@ -7,6 +7,7 @@ import { useZorm } from "react-zorm";
 import { z } from "zod";
 import { updateDynamicTitleAtom } from "~/atoms/dynamic-title-atom";
 import { fileErrorAtom, assetImageValidateFileAtom } from "~/atoms/file";
+import { useAutoFocus } from "~/hooks/use-auto-focus";
 import type {
   AssetEditLoaderData,
   loader,
@@ -94,6 +95,7 @@ type Props = Partial<
   sequentialIdPrefix?: string;
 };
 
+// react-doctor:no-giant-component — deferred for follow-up refactor
 export const AssetForm = ({
   id,
   sequentialId,
@@ -138,6 +140,10 @@ export const AssetForm = ({
 
   const zo = useZorm("NewAssetFormScreen", FormSchema);
   const disabled = isFormProcessing(navigation.state);
+
+  // Focus the asset Title field on mount so create/edit pages start
+  // ready for typing instead of relying on the removed autoFocus prop.
+  const titleInputRef = useAutoFocus<HTMLInputElement>();
 
   // Extract custom field errors into a plain object to pass to AssetCustomFields
   // This avoids passing the complex zo object which causes React 19 issues
@@ -233,6 +239,7 @@ export const AssetForm = ({
           required={true}
         >
           <Input
+            ref={titleInputRef}
             label="Name"
             hideLabel
             name="title"
@@ -240,7 +247,6 @@ export const AssetForm = ({
             error={
               actionData?.errors?.title?.message || zo.errors.title()?.message
             }
-            autoFocus
             onChange={updateDynamicTitle}
             className="w-full"
             defaultValue={title || ""}
