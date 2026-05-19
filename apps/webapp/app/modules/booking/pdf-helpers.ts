@@ -157,8 +157,8 @@ export async function fetchAllPdfRelatedData(
     for (const asset of sortedAssets) {
       if (asset.kit && asset.kitId && !kitsMap.has(asset.kitId)) {
         // Fetch kit with qrCodes to generate QR code map
-        const kitWithQr = await db.kit.findUnique({
-          where: { id: asset.kitId },
+        const kitWithQr = await db.kit.findFirst({
+          where: { id: asset.kitId, organizationId },
           select: { id: true, name: true, qrCodes: true },
         });
         if (kitWithQr) {
