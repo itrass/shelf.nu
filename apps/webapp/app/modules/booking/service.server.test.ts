@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 
 import { db } from "~/database/db.server";
+import { createSystemBookingNote } from "~/modules/booking-note/service.server";
 import * as noteService from "~/modules/note/service.server";
 import { ShelfError } from "~/utils/error";
 import { wrapBookingStatusForNote } from "~/utils/markdoc-wrappers";
@@ -33,6 +34,7 @@ import {
   extendBooking,
   removeAssets,
   getOngoingBookingForAsset,
+  bulkArchiveBookings,
   // Test helper functions
   getActionTextFromTransition,
   getSystemActionText,
@@ -80,6 +82,7 @@ vitest.mock("~/database/db.server", () => ({
       findFirst: vitest.fn().mockResolvedValue(null),
       findMany: vitest.fn().mockResolvedValue([]),
       delete: vitest.fn().mockResolvedValue({}),
+      updateMany: vitest.fn().mockResolvedValue({ count: 0 }),
       count: vitest.fn().mockResolvedValue(0),
     },
     asset: {
@@ -501,6 +504,89 @@ describe("partialCheckinBooking", () => {
     await partialCheckinBooking(mockPartialCheckinParams);
 
     // Should not create partial check-in record when doing complete check-in
+    expect(db.partialBookingCheckin.create).not.toHaveBeenCalled();
+  });
+
+  it("should complete the booking from partial check-in records when the final batch returns the last outstanding asset, even though every asset reads CHECKED_OUT globally (shared across overlapping bookings)", async () => {
+    expect.assertions(2);
+
+    // Reproduces the production bug. Assets are shared across overlapping
+    // bookings, so an asset returned for THIS booking can be CHECKED_OUT again
+    // by a later booking. Completion must therefore be decided from this
+    // booking's PartialBookingCheckin records (the per-booking source of truth
+    // the progress bar uses), NOT from the assets' global `status`.
+    //@ts-expect-error missing vitest type
+    db.booking.findUniqueOrThrow.mockResolvedValue({
+      ...mockBookingData,
+      assets: [
+        { id: "asset-1", kitId: null },
+        { id: "asset-2", kitId: null },
+        { id: "asset-3", kitId: null },
+      ],
+    });
+
+    // asset-1 and asset-2 were already returned for this booking in earlier
+    // sessions (records exist); asset-3 is the last outstanding asset.
+    //@ts-expect-error missing vitest type
+    db.partialBookingCheckin.findMany.mockResolvedValue([
+      { assetIds: ["asset-1", "asset-2"] },
+    ]);
+
+    // Every asset still reads CHECKED_OUT globally because other active
+    // bookings hold the same physical items. The old status-based completion
+    // check never matched here, stranding the booking OVERDUE.
+    //@ts-expect-error missing vitest type
+    db.asset.findMany.mockResolvedValue([
+      { id: "asset-1", status: AssetStatus.CHECKED_OUT },
+      { id: "asset-2", status: AssetStatus.CHECKED_OUT },
+      { id: "asset-3", status: AssetStatus.CHECKED_OUT },
+    ]);
+
+    // Final scan returns the last outstanding asset for this booking.
+    const result = await partialCheckinBooking({
+      ...mockPartialCheckinParams,
+      assetIds: ["asset-3"],
+    });
+
+    // The booking is fully returned → it completes via the full check-in path,
+    // which does NOT record another partial check-in. Before the fix, the
+    // status-based early-exit and the `total - currentBatch` count both failed
+    // to recognise completion and left the booking incomplete.
+    expect(db.partialBookingCheckin.create).not.toHaveBeenCalled();
+    expect(result.isComplete).toBe(true);
+  });
+
+  it("should reject a batch containing assets not in the booking before taking the completion shortcut", async () => {
+    expect.assertions(2);
+
+    // A batch of [lastOutstandingAsset, unrelatedSameOrgAsset] satisfies the
+    // record-based completion check (it covers every outstanding asset), so
+    // membership MUST be validated first — otherwise the booking would complete
+    // and write notes about an asset that was never on it instead of 400ing.
+    // The mobile endpoint forwards raw assetIds, so this guard matters there.
+    //@ts-expect-error missing vitest type
+    db.booking.findUniqueOrThrow.mockResolvedValue({
+      ...mockBookingData,
+      assets: [
+        { id: "asset-1", kitId: null },
+        { id: "asset-2", kitId: null },
+      ],
+    });
+
+    // asset-1 already recorded → asset-2 is the only outstanding asset.
+    //@ts-expect-error missing vitest type
+    db.partialBookingCheckin.findMany.mockResolvedValue([
+      { assetIds: ["asset-1"] },
+    ]);
+
+    await expect(
+      partialCheckinBooking({
+        ...mockPartialCheckinParams,
+        assetIds: ["asset-2", "asset-unrelated"],
+      })
+    ).rejects.toThrow(ShelfError);
+
+    // Must not have completed or recorded anything.
     expect(db.partialBookingCheckin.create).not.toHaveBeenCalled();
   });
 
@@ -1609,7 +1695,7 @@ describe("checkoutBooking", () => {
   });
 
   it("should throw error when assets have booking conflicts", async () => {
-    expect.assertions(1);
+    expect.assertions(2);
 
     const mockBooking = {
       ...mockBookingData,
@@ -1637,6 +1723,11 @@ describe("checkoutBooking", () => {
     await expect(checkoutBooking(mockCheckoutParams)).rejects.toThrow(
       "Cannot check out booking. Some assets are already booked or checked out: Asset 1. Please remove conflicted assets and try again."
     );
+    // Expected business-rule conflict — must not be captured to Sentry
+    // (was noise: SHELF-WEBAPP-1KR; mirrors the reserve path).
+    await expect(checkoutBooking(mockCheckoutParams)).rejects.toMatchObject({
+      shouldBeCaptured: false,
+    });
   });
 
   it("should handle checkout for non-reserved booking", async () => {
@@ -3281,5 +3372,75 @@ describe("getOngoingBookingForAsset", () => {
       },
     });
     expect(result).toEqual(checkedOutBooking);
+  });
+});
+
+describe("bulkArchiveBookings", () => {
+  beforeEach(() => {
+    vitest.clearAllMocks();
+  });
+
+  // Regression for Sentry SHELF-WEBAPP-1KQ: the per-booking status notes used
+  // to run inside an interactive transaction, which held the tx open across N
+  // sequential note writes and aborted the commit with P2028 on large
+  // selections. Notes are written via the global db (never `tx`), so they were
+  // never atomic — they must run AFTER a plain `updateMany`, with no tx.
+  it("archives via a plain updateMany (no interactive tx) and persists a status note for each booking", async () => {
+    expect.assertions(4);
+    //@ts-expect-error mock setup
+    db.booking.findMany.mockResolvedValue([
+      {
+        id: "b1",
+        status: BookingStatus.COMPLETE,
+        custodianUserId: "u1",
+        activeSchedulerReference: null,
+      },
+      {
+        id: "b2",
+        status: BookingStatus.COMPLETE,
+        custodianUserId: null,
+        activeSchedulerReference: null,
+      },
+    ]);
+
+    await bulkArchiveBookings({
+      bookingIds: ["b1", "b2"],
+      organizationId: "org-1",
+    });
+
+    expect(db.booking.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["b1", "b2"] }, organizationId: "org-1" },
+      data: { status: BookingStatus.ARCHIVED },
+    });
+    // The fix removed the interactive transaction entirely for this path.
+    expect(db.$transaction).not.toHaveBeenCalled();
+
+    // Observable outcome: each archived booking gets its own status note in the
+    // caller's org. `createSystemBookingNote` is the persistence boundary the
+    // suite stubs for booking notes (it forwards to db.bookingNote.create), so
+    // we assert per-booking payload here rather than just a call count.
+    expect(createSystemBookingNote).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingId: "b1", organizationId: "org-1" })
+    );
+    expect(createSystemBookingNote).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingId: "b2", organizationId: "org-1" })
+    );
+  });
+
+  it("throws if any selected booking is not COMPLETE", async () => {
+    expect.assertions(1);
+    //@ts-expect-error mock setup
+    db.booking.findMany.mockResolvedValue([
+      {
+        id: "b1",
+        status: BookingStatus.ONGOING,
+        custodianUserId: null,
+        activeSchedulerReference: null,
+      },
+    ]);
+
+    await expect(
+      bulkArchiveBookings({ bookingIds: ["b1"], organizationId: "org-1" })
+    ).rejects.toThrow(ShelfError);
   });
 });

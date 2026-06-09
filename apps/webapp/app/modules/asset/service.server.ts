@@ -19,6 +19,7 @@ import {
   BookingStatus,
   ErrorCorrection,
   KitStatus,
+  OrganizationRoles,
   Prisma,
   TagUseFor,
 } from "@prisma/client";
@@ -103,6 +104,7 @@ import {
 import { isValidImageUrl } from "~/utils/misc";
 import { threeDaysFromNow } from "~/utils/one-week-from-now";
 import {
+  assertCustomFieldsBelongToOrg,
   assertLocationBelongsToOrg,
   assertTagsBelongToOrg,
   assertTeamMemberBelongsToOrg,
@@ -162,6 +164,7 @@ const label: ErrorLabel = "Assets";
 const ASSET_BEFORE_UPDATE_SELECT = Prisma.validator<Prisma.AssetSelect>()({
   title: true,
   description: true,
+  preferredBarcodeId: true,
   category: {
     select: {
       id: true,
@@ -491,6 +494,27 @@ const unavailableBookingStatuses = [
 ];
 
 /**
+ * Matches the shape of an asset identifier or barcode / QR id. Two forms:
+ *   - bare numeric ("21035", or a 12-digit UPC) — users commonly drop the
+ *     prefix when scanning or typing an ID
+ *   - canonical sequential ID ("SAM-0001") — letter prefix + dash + 4+
+ *     digits, matching the format produced by getNextSequentialId
+ *
+ * Used by getAssets to route ID-shaped queries down a narrower OR clause
+ * (sequentialId / barcodes.value / qrCodes.id) instead of the full
+ * 10-branch chain. The narrower clause skips the slow paths — custodian
+ * name traversal and the unindexed customFields JSON ILIKE — while
+ * still covering every place an ID-shaped value can legitimately live.
+ *
+ * Loose terms like "lab-12" or "AS1000" fall through to the full search
+ * because they don't match canonical sequentialId format and could be
+ * substrings of asset titles, custom fields, etc.
+ */
+function looksLikeAssetId(term: string): boolean {
+  return /^\d+$/.test(term) || /^[a-z]+-\d{4,}$/i.test(term);
+}
+
+/**
  * Fetches assets directly from the asset table with enhanced search capabilities
  * @param params Search and filtering parameters for asset queries
  * @returns Assets and total count matching the criteria
@@ -561,64 +585,95 @@ export async function getAssets(params: {
         .map((term) => term.trim())
         .filter(Boolean);
 
-      where.OR = searchTerms.map((term) => ({
-        OR: [
-          // Search in asset fields
-          { title: { contains: term, mode: "insensitive" } },
-          // Search in asset sequential id
+      // Fast path: when every term looks like an asset identifier — either
+      // bare digits ("21035", a UPC barcode) or canonical sequentialId
+      // ("SAM-0001") — narrow the OR clause to the three columns where an
+      // ID-shaped value can legitimately live: sequentialId, barcode value,
+      // and QR id. All three are covered by trigram GIN indexes added in
+      // migration 20260525110348, so the planner stays on indexed scans.
+      // Skipping title/description/category/location/tag/custodian/customFields
+      // is intentional — they can still match via the full path below for
+      // non-ID-shaped terms.
+      if (searchTerms.length > 0 && searchTerms.every(looksLikeAssetId)) {
+        where.OR = searchTerms.flatMap((term) => [
           { sequentialId: { contains: term, mode: "insensitive" } },
-          // Search in asset description
-          { description: { contains: term, mode: "insensitive" } },
-          // Search in related category
-          { category: { name: { contains: term, mode: "insensitive" } } },
-          // Search in related location
-          { location: { name: { contains: term, mode: "insensitive" } } },
-          // Search in related tags
-          { tags: { some: { name: { contains: term, mode: "insensitive" } } } },
-          // Search in custodian names
-          {
-            custody: {
-              custodian: {
-                OR: [
-                  { name: { contains: term, mode: "insensitive" } },
-                  {
-                    user: {
-                      OR: [
-                        { firstName: { contains: term, mode: "insensitive" } },
-                        { lastName: { contains: term, mode: "insensitive" } },
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
-          },
-          // Search qr code id
-          {
-            qrCodes: { some: { id: { contains: term, mode: "insensitive" } } },
-          },
-          // Search barcode values
           {
             barcodes: {
               some: { value: { contains: term, mode: "insensitive" } },
             },
           },
-          // Search in custom fields
           {
-            customFields: {
-              some: {
-                OR: CUSTOM_FIELD_SEARCH_PATHS.map((jsonPath) => ({
-                  value: {
-                    path: [jsonPath],
-                    string_contains: term,
-                    mode: "insensitive",
-                  },
-                })),
-              },
+            qrCodes: {
+              some: { id: { contains: term, mode: "insensitive" } },
             },
           },
-        ],
-      }));
+        ]);
+      } else {
+        where.OR = searchTerms.map((term) => ({
+          OR: [
+            // Search in asset fields
+            { title: { contains: term, mode: "insensitive" } },
+            // Search in asset sequential id
+            { sequentialId: { contains: term, mode: "insensitive" } },
+            // Search in asset description
+            { description: { contains: term, mode: "insensitive" } },
+            // Search in related category
+            { category: { name: { contains: term, mode: "insensitive" } } },
+            // Search in related location
+            { location: { name: { contains: term, mode: "insensitive" } } },
+            // Search in related tags
+            {
+              tags: { some: { name: { contains: term, mode: "insensitive" } } },
+            },
+            // Search in custodian names
+            {
+              custody: {
+                custodian: {
+                  OR: [
+                    { name: { contains: term, mode: "insensitive" } },
+                    {
+                      user: {
+                        OR: [
+                          {
+                            firstName: { contains: term, mode: "insensitive" },
+                          },
+                          { lastName: { contains: term, mode: "insensitive" } },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+            // Search qr code id
+            {
+              qrCodes: {
+                some: { id: { contains: term, mode: "insensitive" } },
+              },
+            },
+            // Search barcode values
+            {
+              barcodes: {
+                some: { value: { contains: term, mode: "insensitive" } },
+              },
+            },
+            // Search in custom fields
+            {
+              customFields: {
+                some: {
+                  OR: CUSTOM_FIELD_SEARCH_PATHS.map((jsonPath) => ({
+                    value: {
+                      path: [jsonPath],
+                      string_contains: term,
+                      mode: "insensitive",
+                    },
+                  })),
+                },
+              },
+            },
+          ],
+        }));
+      }
     }
 
     if (status) {
@@ -1119,11 +1174,24 @@ export async function createAsset({
         });
       }
 
+      /** Custom-field ids referenced by this create. Sourced from form input
+       * and validated for org ownership inside the create transaction below
+       * (cross-org IDOR guard). */
+      let customFieldIdsToValidate: string[] = [];
+
       /** If custom fields are passed, create them */
       if (customFieldsValues && customFieldsValues.length > 0) {
         const customFieldValuesToAdd = customFieldsValues.filter(
           (cf) => !!cf.value
         );
+
+        // SECURITY (cross-org IDOR): these ids get connected to a CustomField
+        // by the nested `create` below, which has no org scoping of its own.
+        // Collected here and validated inside the transaction (see the
+        // assertCustomFieldsBelongToOrg call there).
+        customFieldIdsToValidate = customFieldValuesToAdd
+          .map(({ id }) => id)
+          .filter(Boolean);
 
         Object.assign(data, {
           /** Custom fields here refers to the values, check the Schema for more info */
@@ -1178,6 +1246,15 @@ export async function createAsset({
 
       // Use transaction to ensure asset creation and activity event are atomic
       const asset = await db.$transaction(async (tx) => {
+        // SECURITY (cross-org IDOR): prove every form-supplied custom-field id
+        // belongs to this org before the nested create connects them. Run inside
+        // the tx so the ownership check shares the write's transaction (no-op
+        // when there are no custom-field ids).
+        await assertCustomFieldsBelongToOrg(
+          { customFieldIds: customFieldIdsToValidate, organizationId },
+          tx
+        );
+
         const created = await tx.asset.create({
           data,
           include: {
@@ -1270,6 +1347,7 @@ export async function updateAsset({
   valuation,
   customFieldsValues: customFieldsValuesFromForm,
   barcodes,
+  preferredBarcodeId,
   organizationId,
   request,
 }: UpdateAssetPayload) {
@@ -1309,7 +1387,8 @@ export async function updateAsset({
       typeof title !== "undefined" ||
         typeof description !== "undefined" ||
         typeof categoryId !== "undefined" ||
-        typeof valuation !== "undefined"
+        typeof valuation !== "undefined" ||
+        typeof preferredBarcodeId !== "undefined"
     );
 
     const assetBeforeUpdate = await fetchAssetBeforeUpdate({
@@ -1443,26 +1522,184 @@ export async function updateAsset({
         (cf) => !cf.value
       );
 
+      // SECURITY (cross-org IDOR): the create/updateMany writes below connect
+      // values to a CustomField by an id sourced from form input. Prove every
+      // referenced custom field belongs to this org before writing. (Removals
+      // go through `deleteMany` scoped to this asset's own value rows, so only
+      // the added/updated ids need the check.)
+      await assertCustomFieldsBelongToOrg({
+        customFieldIds: customFieldValuesToAdd
+          .map(({ id }) => id)
+          .filter(Boolean),
+        organizationId,
+      });
+
+      /**
+       * Split the writes into create vs update ourselves instead of using a
+       * nested `upsert`. Prisma emulates each nested upsert with a
+       * SELECT-then-write round-trip per field, which is the N+1 reported in
+       * Sentry SHELF-WEBAPP-1KY / SHELF-WEBAPP-1MF. We already loaded the
+       * existing values above (`currentCustomFieldsValuesWithFields`), so we
+       * know which fields exist without asking the database again. Each
+       * custom field has at most one value row per asset, so keying by
+       * `customFieldId` is unambiguous.
+       */
+      const existingValueIdByFieldId = new Map(
+        currentCustomFieldsValuesWithFields.map((ccfv) => [
+          ccfv.customFieldId,
+          ccfv.id,
+        ])
+      );
+
+      const customFieldsToCreate = customFieldValuesToAdd
+        .filter(({ id }) => !existingValueIdByFieldId.has(id))
+        .map(({ id, value }) => ({ value, customFieldId: id }));
+
+      /**
+       * Existing values are written with `updateMany` (one entry per row),
+       * NOT a nested `update`. `update` would throw P2025 and abort the whole
+       * asset save if a concurrent edit deleted the value row in the window
+       * between the `findMany` above and this write; `updateMany` matches zero
+       * rows instead of throwing. The concurrent delete then wins (the row
+       * stays gone) rather than 500-ing the user — an acceptable
+       * last-write-wins outcome for this rare interleaving, and it keeps the
+       * per-field existence SELECT eliminated.
+       */
+      const customFieldsToUpdate = customFieldValuesToAdd
+        .filter(({ id }) => existingValueIdByFieldId.has(id))
+        .map(({ id, value }) => ({
+          where: { id: existingValueIdByFieldId.get(id) as string },
+          data: { value },
+        }));
+
       Object.assign(data, {
         customFields: {
-          upsert: customFieldValuesToAdd?.map(({ id, value }) => ({
-            where: {
-              id:
-                currentCustomFieldsValuesWithFields.find(
-                  (ccfv) => ccfv.customFieldId === id
-                )?.id || "",
-            },
-            update: { value },
-            create: {
-              value,
-              customFieldId: id,
-            },
-          })),
-          deleteMany: customFieldValuesToRemove.map((cf) => ({
-            customFieldId: cf.id,
-          })),
+          ...(customFieldsToCreate.length > 0
+            ? { create: customFieldsToCreate }
+            : {}),
+          ...(customFieldsToUpdate.length > 0
+            ? { updateMany: customFieldsToUpdate }
+            : {}),
+          ...(customFieldValuesToRemove.length > 0
+            ? {
+                deleteMany: customFieldValuesToRemove.map((cf) => ({
+                  customFieldId: cf.id,
+                })),
+              }
+            : {}),
         },
       });
+    }
+
+    // Normalize the form-submitted preferredBarcodeId early so the same
+    // value is used by the pre-flight validation below and the actual write
+    // further down. Both undefined (field absent from patch) and empty
+    // string (form sends "" for "workspace default") collapse to null —
+    // any non-null branch is then guarded by `preferredBarcodeId !== undefined`
+    // so we never mistake "field omitted from patch" for "user picked
+    // workspace default" when writing.
+    const targetPreferred: string | null =
+      preferredBarcodeId === null ||
+      preferredBarcodeId === undefined ||
+      preferredBarcodeId.length === 0
+        ? null
+        : preferredBarcodeId;
+
+    /**
+     * P1 atomicity guard (pre-flight):
+     *
+     * The preferred-barcode override must reference a barcode that will
+     * still exist on this asset AFTER `updateBarcodes` runs. Without this
+     * pre-flight, a save that simultaneously (a) removes the currently-
+     * preferred barcode from the `barcodes` array AND (b) keeps the now-
+     * stale `preferredBarcodeId` would delete the barcode first, then
+     * fail validation, returning a 400 to the user while leaving the
+     * barcodes table mutated. We surface the error before any write so
+     * the rejected save is genuinely atomic.
+     *
+     * Membership-check semantics:
+     * - If `barcodes` is being submitted, compute the post-update id-set
+     *   from the submission (only entries that already have an `id` —
+     *   freshly-created ones have no id yet and can't be referenced).
+     * - If `barcodes` is NOT being submitted, the current DB set is the
+     *   post-update set, so query the live barcodes table scoped to
+     *   `{ assetId, organizationId }` (also closes cross-org IDOR).
+     */
+    if (preferredBarcodeId !== undefined && targetPreferred !== null) {
+      // Addon entitlement gate. Non-addon (and addon-revoked) orgs must not
+      // be able to persist a non-null `preferredBarcodeId` via a tampered
+      // form post — the UI gates the override section by `canUseBarcodes`,
+      // but the server-side action must enforce the same invariant. The
+      // resolver already silently falls back to QR for addon-revoked orgs
+      // (the override branch is gated by `barcodesEnabled` in display.ts),
+      // so this check is belt-and-suspenders: it prevents the stale value
+      // from being written in the first place rather than leaving silent
+      // drift in the DB. `null` overrides are always allowed — that's the
+      // "clear my override" intent and shouldn't require the addon.
+      const orgEntitlement = await db.organization.findUniqueOrThrow({
+        where: { id: organizationId },
+        select: { barcodesEnabled: true },
+      });
+      if (!orgEntitlement.barcodesEnabled) {
+        throw new ShelfError({
+          cause: null,
+          message:
+            "Per-asset preferred-barcode overrides require the alternative-barcodes add-on. " +
+            "Enable the add-on or clear the override (leave it on workspace default).",
+          additionalData: {
+            assetId: id,
+            organizationId,
+            preferredBarcodeId: targetPreferred,
+          },
+          label,
+          status: 403,
+          shouldBeCaptured: false,
+        });
+      }
+
+      // Org-scoped ownership check — ALWAYS run, even when `barcodes` is
+      // being submitted. The submitted-array check below proves the id will
+      // survive `updateBarcodes`'s mutation, but it does NOT prove the id
+      // actually belongs to this asset/org: a forged form could include
+      // `barcodes: [{ id: "victim-barcode-id", ... }]` to slip past the
+      // earlier check. The DB lookup closes the cross-asset / cross-org
+      // IDOR vector authoritatively.
+      const owned = await db.barcode.findFirst({
+        where: {
+          id: targetPreferred,
+          assetId: id,
+          organizationId,
+        },
+        select: { id: true },
+      });
+      let isMember = Boolean(owned);
+
+      // Additional gate when the patch is also rewriting the `barcodes`
+      // collection: the target must still be in the post-update set
+      // (i.e., not being deleted in the same save). Without this, a save
+      // that simultaneously removes the preferred barcode and keeps the
+      // override would partially-commit (barcodes deleted, then 400 on
+      // membership) — the original P1 from Codex.
+      if (isMember && barcodes !== undefined) {
+        isMember = barcodes.some(
+          (bc) => typeof bc.id === "string" && bc.id === targetPreferred
+        );
+      }
+
+      if (!isMember) {
+        throw new ShelfError({
+          cause: null,
+          message:
+            "The selected preferred barcode is not linked to this asset.",
+          additionalData: {
+            assetId: id,
+            preferredBarcodeId: targetPreferred,
+          },
+          label,
+          status: 400,
+          shouldBeCaptured: false,
+        });
+      }
     }
 
     const asset = await db.asset.update({
@@ -1484,6 +1721,100 @@ export async function updateAsset({
         organizationId,
         userId,
       });
+    }
+
+    /**
+     * Per-asset preferred-barcode override.
+     * Membership of `targetPreferred` was already proven by the pre-flight
+     * guard above (either against the submitted `barcodes` array or against
+     * the current DB set), so this block is now purely the write + audit.
+     */
+    if (preferredBarcodeId !== undefined) {
+      const previousPreferred = assetBeforeUpdate?.preferredBarcodeId ?? null;
+
+      // Did THIS request's `updateBarcodes` call delete the previously-
+      // preferred barcode? True only when (a) a previously-preferred
+      // barcode existed AND (b) the patch submitted a `barcodes` array
+      // that no longer contains it (so updateBarcodes deleted it and the
+      // FK `onDelete: SetNull` cascade nulled `preferredBarcodeId`).
+      // This is the "explicit clear-by-this-request" signal we need to
+      // distinguish "we caused the cascade" from "someone else moved
+      // preferredBarcodeId concurrently".
+      const weDeletedPreferredViaCascade =
+        previousPreferred !== null &&
+        barcodes !== undefined &&
+        !barcodes.some(
+          (bc) => typeof bc.id === "string" && bc.id === previousPreferred
+        );
+
+      // Wrap the read + update + audit in one transaction so the *write*
+      // decision is based on the committed current state (defeats
+      // concurrent-external-write TOCTOU). The *audit* fires only when
+      // THIS request actually caused the change — either via the explicit
+      // write below, or via the cascade-delete branch above. We must NOT
+      // audit when the value simply differs between the pre-request
+      // snapshot and the in-tx read because of a concurrent external
+      // write — that would misattribute someone else's change to this actor.
+      const wroteOrAudited = await db.$transaction(async (tx) => {
+        const current = await tx.asset.findUniqueOrThrow({
+          where: { id, organizationId },
+          select: { preferredBarcodeId: true },
+        });
+        const currentPreferred = current.preferredBarcodeId ?? null;
+
+        const needsWrite = currentPreferred !== targetPreferred;
+        if (needsWrite) {
+          await tx.asset.update({
+            where: { id, organizationId },
+            data: { preferredBarcodeId: targetPreferred },
+          });
+        }
+
+        // Audit when THIS request caused the row change. Two attribution
+        // paths:
+        //   1. We performed the explicit DB write (target differed from
+        //      the in-tx current state).
+        //   2. The cascade-delete from THIS request's `updateBarcodes`
+        //      nulled the row AND the user's target is null too (the
+        //      cascade fulfilled the user's "clear my override" intent
+        //      silently; we still want an audit row).
+        // Concurrent external writes can't satisfy either condition.
+        const auditAttributableToUs =
+          needsWrite ||
+          (weDeletedPreferredViaCascade &&
+            targetPreferred === null &&
+            currentPreferred === null);
+
+        if (auditAttributableToUs && previousPreferred !== targetPreferred) {
+          // Structured event per `.claude/rules/use-record-event.md`.
+          await recordEvent(
+            {
+              organizationId,
+              actorUserId: userId,
+              action: "ASSET_PREFERRED_BARCODE_CHANGED",
+              entityType: "ASSET",
+              entityId: id,
+              assetId: id,
+              field: "preferredBarcodeId",
+              fromValue: previousPreferred,
+              toValue: targetPreferred,
+            },
+            tx
+          );
+          return true;
+        }
+
+        return false;
+      });
+
+      if (wroteOrAudited) {
+        // Sync the in-memory `asset` object so the returned shape reflects
+        // the post-update state — callers that destructure
+        // `preferredBarcodeId` (e.g., to drive an immediate cache
+        // invalidation) would otherwise see the stale value from the
+        // earlier `db.asset.update` snapshot.
+        asset.preferredBarcodeId = targetPreferred;
+      }
     }
 
     /** If the location id was passed, we create a note for the move */
@@ -2794,7 +3125,8 @@ export async function createAssetsFromContentImport({
           if (!isValidImageUrl(asset.imageUrl)) {
             throw new ShelfError({
               cause: null,
-              message: "Invalid image format. Please use .png, .jpg, or .jpeg",
+              message:
+                "Image URL must be a valid http(s) URL, including the https:// prefix.",
               additionalData: { url: asset.imageUrl },
               label: "Assets",
               shouldBeCaptured: false,
@@ -3670,29 +4002,37 @@ export async function bulkDeleteAssets({
     });
 
     try {
-      await db.$transaction(async (tx) => {
-        // Activity events — one ASSET_DELETED per asset, emitted before the
-        // delete so the rows still exist for any cross-ref checks. Mirrors
-        // singular `deleteAsset`.
-        if (assets.length > 0) {
-          await recordEvents(
-            assets.map((asset) => ({
-              organizationId,
-              actorUserId: userId,
-              action: "ASSET_DELETED" as const,
-              entityType: "ASSET" as const,
-              entityId: asset.id,
-              assetId: asset.id,
-            })),
-            tx
-          );
-        }
+      // Defense-in-depth: a bulk delete cascades across every asset relation
+      // (notes, custody, codes, custom-field values, booking joins …), so a
+      // large selection can creep past Prisma's 5s interactive-tx default and
+      // abort with P2028 (Sentry SHELF-WEBAPP-1MJ). Bump the ceiling to 15s,
+      // matching the booking-checkout precedent.
+      await db.$transaction(
+        async (tx) => {
+          // Activity events — one ASSET_DELETED per asset, emitted before the
+          // delete so the rows still exist for any cross-ref checks. Mirrors
+          // singular `deleteAsset`.
+          if (assets.length > 0) {
+            await recordEvents(
+              assets.map((asset) => ({
+                organizationId,
+                actorUserId: userId,
+                action: "ASSET_DELETED" as const,
+                entityType: "ASSET" as const,
+                entityId: asset.id,
+                assetId: asset.id,
+              })),
+              tx
+            );
+          }
 
-        await tx.asset.deleteMany({
-          // eslint-disable-next-line local-rules/require-org-scope-on-id-queries -- idor-safe: `assets` was fetched on lines 3659-3665 with where { id in resolvedIds, organizationId }; every id here is already org-proven
-          where: { id: { in: assets.map((asset) => asset.id) } },
-        });
-      });
+          await tx.asset.deleteMany({
+            // eslint-disable-next-line local-rules/require-org-scope-on-id-queries -- idor-safe: `assets` was fetched on lines 3659-3665 with where { id in resolvedIds, organizationId }; every id here is already org-proven
+            where: { id: { in: assets.map((asset) => asset.id) } },
+          });
+        },
+        { timeout: 15000 }
+      );
 
       /** Deleting images of the assets (if any) */
       const assetsWithImages = assets.filter((asset) => !!asset.mainImage);
@@ -3747,6 +4087,7 @@ export async function bulkDeleteAssets({
  */
 export async function bulkAssignCustody({
   userId,
+  role,
   assetIds,
   custodianId,
   custodianName,
@@ -3755,6 +4096,11 @@ export async function bulkAssignCustody({
   settings,
 }: {
   userId: User["id"];
+  /**
+   * Caller's role. Required so the SELF_SERVICE self-restriction is enforced
+   * here for EVERY caller (web + mobile), not duplicated in each route.
+   */
+  role: OrganizationRoles;
   assetIds: Asset["id"][];
   custodianId: TeamMember["id"];
   custodianName: TeamMember["name"];
@@ -3809,6 +4155,24 @@ export async function bulkAssignCustody({
         },
       }),
     ]);
+
+    // Self-service users may only assign custody to themselves. Enforced in the
+    // service so every caller (web + mobile) is covered; previously this lived
+    // only in the web route and the mobile routes bypassed it.
+    if (
+      role === OrganizationRoles.SELF_SERVICE &&
+      custodianTeamMember?.user?.id !== userId
+    ) {
+      throw new ShelfError({
+        cause: null,
+        title: "Action not allowed",
+        message: "Self user can only assign custody to themselves only.",
+        additionalData: { userId, assetIds, custodianId },
+        label: "Assets",
+        status: 403,
+        shouldBeCaptured: false,
+      });
+    }
 
     const assetsNotAvailable = assets.some(
       (asset) => asset.status !== "AVAILABLE"
@@ -3926,12 +4290,18 @@ export async function bulkAssignCustody({
  */
 export async function bulkReleaseCustody({
   userId,
+  role,
   assetIds,
   organizationId,
   currentSearchParams,
   settings,
 }: {
   userId: User["id"];
+  /**
+   * Caller's role. Required so the SELF_SERVICE self-restriction is enforced
+   * here for EVERY caller (web + mobile), not duplicated in each route.
+   */
+  role: OrganizationRoles;
   assetIds: Asset["id"][];
   organizationId: Asset["organizationId"];
   currentSearchParams?: string | null;
@@ -3981,6 +4351,24 @@ export async function bulkReleaseCustody({
         message:
           "There are some assets without custody. Please make sure you are selecting assets with custody.",
         label: "Assets",
+        shouldBeCaptured: false,
+      });
+    }
+
+    // Self-service users may only release custody of assets assigned to them.
+    // Enforced in the service so every caller (web + mobile) is covered.
+    if (
+      role === OrganizationRoles.SELF_SERVICE &&
+      assets.some((asset) => asset.custody?.custodian?.userId !== userId)
+    ) {
+      throw new ShelfError({
+        cause: null,
+        title: "Action not allowed",
+        message:
+          "Self service user can only release custody of assets assigned to their user.",
+        additionalData: { userId, assetIds },
+        label: "Assets",
+        status: 403,
         shouldBeCaptured: false,
       });
     }
@@ -4495,55 +4883,62 @@ export async function bulkAssignAssetTags({
         }, new Map())
       );
 
-    const updatedAssets = await db.$transaction(async (tx) => {
-      const results = await Promise.all(
-        resolvedIds.map((id) =>
-          tx.asset.update({
-            where: { id, organizationId },
-            data: {
-              tags: {
-                [remove ? "disconnect" : "connect"]: tagsIds.map((tagId) => ({
-                  id: tagId,
-                })),
+    // Defense-in-depth: this issues one `asset.update` per selected asset
+    // inside the interactive tx (needed to diff each asset's tag set), so a
+    // large selection serially exhausts Prisma's 5s default and aborts with
+    // P2028 (Sentry SHELF-WEBAPP-1MH). Bump the ceiling to 15s.
+    const updatedAssets = await db.$transaction(
+      async (tx) => {
+        const results = await Promise.all(
+          resolvedIds.map((id) =>
+            tx.asset.update({
+              where: { id, organizationId },
+              data: {
+                tags: {
+                  [remove ? "disconnect" : "connect"]: tagsIds.map((tagId) => ({
+                    id: tagId,
+                  })),
+                },
               },
-            },
-            include: {
-              tags: { select: { id: true, name: true } },
-            },
-          })
-        )
-      );
+              include: {
+                tags: { select: { id: true, name: true } },
+              },
+            })
+          )
+        );
 
-      // Activity events — one ASSET_TAGS_CHANGED per asset whose tag set
-      // actually changed. Same shape as the singular `updateAsset` flow.
-      const tagChangeEvents: Parameters<typeof recordEvents>[0] = [];
-      for (const asset of results) {
-        const previousTags = previousTagsByAssetId.get(asset.id) ?? [];
-        const previousTagIds = new Set(previousTags.map((t) => t.id));
-        const currentTagIds = new Set(asset.tags.map((t) => t.id));
-        const setsDiffer =
-          previousTagIds.size !== currentTagIds.size ||
-          [...previousTagIds].some((t) => !currentTagIds.has(t));
-        if (setsDiffer) {
-          tagChangeEvents.push({
-            organizationId,
-            actorUserId: userId,
-            action: "ASSET_TAGS_CHANGED",
-            entityType: "ASSET",
-            entityId: asset.id,
-            assetId: asset.id,
-            field: "tags",
-            fromValue: [...previousTagIds],
-            toValue: [...currentTagIds],
-          });
+        // Activity events — one ASSET_TAGS_CHANGED per asset whose tag set
+        // actually changed. Same shape as the singular `updateAsset` flow.
+        const tagChangeEvents: Parameters<typeof recordEvents>[0] = [];
+        for (const asset of results) {
+          const previousTags = previousTagsByAssetId.get(asset.id) ?? [];
+          const previousTagIds = new Set(previousTags.map((t) => t.id));
+          const currentTagIds = new Set(asset.tags.map((t) => t.id));
+          const setsDiffer =
+            previousTagIds.size !== currentTagIds.size ||
+            [...previousTagIds].some((t) => !currentTagIds.has(t));
+          if (setsDiffer) {
+            tagChangeEvents.push({
+              organizationId,
+              actorUserId: userId,
+              action: "ASSET_TAGS_CHANGED",
+              entityType: "ASSET",
+              entityId: asset.id,
+              assetId: asset.id,
+              field: "tags",
+              fromValue: [...previousTagIds],
+              toValue: [...currentTagIds],
+            });
+          }
         }
-      }
-      if (tagChangeEvents.length > 0) {
-        await recordEvents(tagChangeEvents, tx);
-      }
+        if (tagChangeEvents.length > 0) {
+          await recordEvents(tagChangeEvents, tx);
+        }
 
-      return results;
-    });
+        return results;
+      },
+      { timeout: 15000 }
+    );
 
     await Promise.all(
       updatedAssets.map((asset) =>

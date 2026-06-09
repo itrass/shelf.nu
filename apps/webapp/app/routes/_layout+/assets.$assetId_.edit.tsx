@@ -204,6 +204,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
       newLocationId,
       currentLocationId,
       valuation,
+      preferredBarcodeId,
       addAnother,
       redirectTo,
     } = parsedData;
@@ -227,6 +228,9 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
       userId: authSession.userId,
       customFieldsValues,
       barcodes,
+      // Only honor preferredBarcodeId when the org has the barcode add-on.
+      // The UI hides the selector otherwise; this is defense-in-depth.
+      preferredBarcodeId: canUseBarcodes ? preferredBarcodeId : undefined,
       valuation,
       organizationId,
       request,
@@ -292,6 +296,7 @@ export default function AssetEditPage() {
           valuation={asset.valuation}
           tags={tags}
           barcodes={asset.barcodes}
+          preferredBarcodeId={asset.preferredBarcodeId}
           referer={referer}
         />
       </div>
