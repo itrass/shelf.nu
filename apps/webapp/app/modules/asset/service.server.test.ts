@@ -64,6 +64,9 @@ vitest.mock("~/database/db.server", () => ({
         .fn()
         .mockResolvedValue({ firstName: "John", lastName: "Doe" }),
     },
+    organization: {
+      findUnique: vitest.fn().mockResolvedValue({ sequentialIdPrefix: "SAM" }),
+    },
   },
 }));
 
