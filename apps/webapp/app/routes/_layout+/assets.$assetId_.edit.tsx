@@ -143,7 +143,6 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       currency: currentOrganization?.currency,
       customFields,
       referer: getRefererPath(request),
-      sequentialIdPrefix: currentOrganization.sequentialIdPrefix,
     });
   } catch (cause) {
     const reason = makeShelfError(cause, { userId, id });
@@ -290,7 +289,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
 
 export default function AssetEditPage() {
   const title = useAtomValue(dynamicTitleAtom);
-  const { asset, referer, sequentialIdPrefix } = useLoaderData<typeof loader>();
+  const { asset, referer } = useLoaderData<typeof loader>();
   const tags = useMemo(
     () => asset.tags?.map((tag) => ({ label: tag.name, value: tag.id })) || [],
     [asset.tags]
@@ -309,7 +308,6 @@ export default function AssetEditPage() {
         <AssetForm
           id={asset.id}
           sequentialId={asset.sequentialId}
-          sequentialIdPrefix={sequentialIdPrefix}
           mainImage={asset.mainImage}
           thumbnailImage={asset.thumbnailImage}
           mainImageExpiration={

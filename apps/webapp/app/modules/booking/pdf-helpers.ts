@@ -51,6 +51,8 @@ export interface PdfDbResult {
     };
   }>;
   assets: (Asset & {
+    /** Virtual field — derived from `assetKits[0]?.kit.id` by the query mapper. */
+    kitId: string | null;
     category: Pick<Category, "name"> | null;
     location: Pick<Location, "name"> | null;
     kit:
@@ -168,6 +170,10 @@ export async function fetchAllPdfRelatedData(
                 select: {
                   id: true,
                   name: true,
+                  minimizeInPdf: true,
+                  image: true,
+                  imageExpiration: true,
+                  description: true,
                   location: { select: { name: true } },
                 },
               },
@@ -202,7 +208,17 @@ export async function fetchAllPdfRelatedData(
       return {
         ...asset,
         kitId: assetKit?.id ?? null,
-        kit: assetKit ? { id: assetKit.id, name: assetKit.name } : null,
+        kit: assetKit
+          ? {
+              id: assetKit.id,
+              name: assetKit.name,
+              minimizeInPdf: assetKit.minimizeInPdf,
+              image: assetKit.image,
+              imageExpiration: assetKit.imageExpiration,
+              description: assetKit.description,
+              location: assetKit.location,
+            }
+          : null,
         location: getPrimaryLocation(asset),
       };
     });

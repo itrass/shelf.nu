@@ -127,6 +127,7 @@ function payloadFor(assetIds: string[]): BulkQrDownloadLoaderData {
     })),
     qrIdDisplayPreference: "QR_ID",
     showShelfBranding: true,
+    organizationLogoUrl: null,
   };
 }
 
