@@ -1,7 +1,11 @@
+import { AssetStatus, BookingStatus } from "@prisma/client";
 import { describe, it, expect } from "vitest";
 import {
+  countRemainingCheckoutAssets,
   filterBookingAssets,
   groupAndSortAssetsByKit,
+  isAssetCheckoutEligible,
+  shouldPromptEarlyCheckout,
   type SearchableBookingAsset,
 } from "./helpers";
 
@@ -32,269 +36,204 @@ const createAsset = (
 
 describe("groupAndSortAssetsByKit", () => {
   describe("grouping behavior", () => {
-    it("groups assets by kit and places kits before individual assets", () => {
-      const assets = [
-        createAsset("1", "Individual Asset", "AVAILABLE"),
-        createAsset("2", "Kit Asset 1", "AVAILABLE", "kit-1", "Kit A"),
-        createAsset("3", "Kit Asset 2", "AVAILABLE", "kit-1", "Kit A"),
-      ];
-
-      const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      // Kit assets should come first, then individual assets
-      expect(result[0].kitId).toBe("kit-1");
-      expect(result[1].kitId).toBe("kit-1");
-      expect(result[2].kitId).toBeNull();
-    });
-
-    it("keeps assets from the same kit together", () => {
+    it("keeps assets from the same kit contiguous", () => {
       const assets = [
         createAsset("1", "Asset A", "AVAILABLE", "kit-1", "Kit 1"),
         createAsset("2", "Asset B", "AVAILABLE", "kit-2", "Kit 2"),
         createAsset("3", "Asset C", "AVAILABLE", "kit-1", "Kit 1"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      // Find positions of kit-1 assets
-      const kit1Positions = result
+      const kit1 = result
         .map((a, i) => (a.kitId === "kit-1" ? i : -1))
         .filter((i) => i !== -1);
-
-      // They should be adjacent
-      expect(kit1Positions[1] - kit1Positions[0]).toBe(1);
+      expect(kit1[1] - kit1[0]).toBe(1);
     });
   });
 
-  describe("sorting by title", () => {
-    it("sorts kits by kit name ascending", () => {
+  describe("sorting by title (flat interleave of kits and assets)", () => {
+    it("orders kit units and standalone assets together by name", () => {
       const assets = [
-        createAsset("1", "Asset", "AVAILABLE", "kit-b", "Kit B"),
-        createAsset("2", "Asset", "AVAILABLE", "kit-a", "Kit A"),
+        createAsset("z", "Zebra", "AVAILABLE"),
+        createAsset("k", "member", "AVAILABLE", "kit-1", "Alpha Kit"),
+        createAsset("c", "Camera", "AVAILABLE"),
+        createAsset("d", "member", "AVAILABLE", "kit-2", "Delta Kit"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      expect(result[0].kit?.name).toBe("Kit A");
-      expect(result[1].kit?.name).toBe("Kit B");
+      // Alpha Kit(k) < Camera(c) < Delta Kit(d) < Zebra(z)
+      expect(result.map((a) => a.id)).toEqual(["k", "c", "d", "z"]);
     });
 
-    it("sorts kits by kit name descending", () => {
+    it("reverses order when descending", () => {
       const assets = [
-        createAsset("1", "Asset", "AVAILABLE", "kit-a", "Kit A"),
-        createAsset("2", "Asset", "AVAILABLE", "kit-b", "Kit B"),
+        createAsset("a", "Apple", "AVAILABLE"),
+        createAsset("b", "member", "AVAILABLE", "kit-1", "Mango Kit"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "title", "desc");
-
-      expect(result[0].kit?.name).toBe("Kit B");
-      expect(result[1].kit?.name).toBe("Kit A");
-    });
-
-    it("sorts assets within kits by title", () => {
-      const assets = [
-        createAsset("1", "Zebra", "AVAILABLE", "kit-1", "Kit"),
-        createAsset("2", "Apple", "AVAILABLE", "kit-1", "Kit"),
-      ];
-
-      const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      expect(result[0].title).toBe("Apple");
-      expect(result[1].title).toBe("Zebra");
-    });
-
-    it("sorts individual assets by title", () => {
-      const assets = [
-        createAsset("1", "Zebra", "AVAILABLE"),
-        createAsset("2", "Apple", "AVAILABLE"),
-      ];
-
-      const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      expect(result[0].title).toBe("Apple");
-      expect(result[1].title).toBe("Zebra");
+      expect(result.map((a) => a.id)).toEqual(["b", "a"]); // Mango Kit > Apple
     });
   });
 
-  describe("sorting by status", () => {
-    it("sorts kits by most urgent status (CHECKED_OUT first when desc)", () => {
+  describe("sorting by status (checked-out sinks to the bottom)", () => {
+    it("puts checked-out standalone assets last, actionable first (desc)", () => {
       const assets = [
-        createAsset("1", "Asset", "AVAILABLE", "kit-a", "Kit A"),
-        createAsset("2", "Asset", "CHECKED_OUT", "kit-b", "Kit B"),
+        createAsset("out", "A", "CHECKED_OUT"),
+        createAsset("avail", "B", "AVAILABLE"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "status", "desc");
-
-      // Kit B has CHECKED_OUT which is more urgent
-      expect(result[0].kit?.name).toBe("Kit B");
-      expect(result[1].kit?.name).toBe("Kit A");
+      expect(result.map((a) => a.id)).toEqual(["avail", "out"]);
     });
 
-    it("sorts assets within kits by status", () => {
+    it("uses alphabetical name as the secondary sort within a bucket", () => {
       const assets = [
-        createAsset("1", "Asset A", "AVAILABLE", "kit-1", "Kit"),
-        createAsset("2", "Asset B", "CHECKED_OUT", "kit-1", "Kit"),
+        createAsset("b", "Bravo", "AVAILABLE"),
+        createAsset("a", "Alpha", "AVAILABLE"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "status", "desc");
-
-      expect(result[0].status).toBe("CHECKED_OUT");
-      expect(result[1].status).toBe("AVAILABLE");
+      expect(result.map((a) => a.id)).toEqual(["a", "b"]);
     });
 
-    it("uses title as secondary sort for same status", () => {
+    it("keeps a kit on top while ANY member is not checked out", () => {
       const assets = [
-        createAsset("1", "Zebra", "AVAILABLE"),
-        createAsset("2", "Apple", "AVAILABLE"),
+        createAsset("s", "Solo", "CHECKED_OUT"),
+        createAsset("m1", "M1", "CHECKED_OUT", "kit-1", "Kit"),
+        createAsset("m2", "M2", "AVAILABLE", "kit-1", "Kit"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "status", "desc");
+      // Kit is partially out => actionable => its members precede the
+      // fully-checked-out standalone asset. Members ordered avail-first.
+      expect(result.map((a) => a.id)).toEqual(["m2", "m1", "s"]);
+    });
 
-      expect(result[0].title).toBe("Apple");
-      expect(result[1].title).toBe("Zebra");
+    it("sinks a kit to the bottom only when ALL members are checked out", () => {
+      const assets = [
+        createAsset("avail", "Zzz", "AVAILABLE"),
+        createAsset("m1", "M1", "CHECKED_OUT", "kit-1", "Kit"),
+        createAsset("m2", "M2", "CHECKED_OUT", "kit-1", "Kit"),
+      ];
+      const result = groupAndSortAssetsByKit(assets, "status", "desc");
+      expect(result.map((a) => a.id)).toEqual(["avail", "m1", "m2"]);
+    });
+
+    it("swaps the buckets when ascending (checked-out first)", () => {
+      const assets = [
+        createAsset("avail", "A", "AVAILABLE"),
+        createAsset("out", "B", "CHECKED_OUT"),
+      ];
+      const result = groupAndSortAssetsByKit(assets, "status", "asc");
+      expect(result.map((a) => a.id)).toEqual(["out", "avail"]);
+    });
+
+    it("respects a custom isCheckedOut predicate", () => {
+      const assets = [
+        createAsset("x", "X", "AVAILABLE"),
+        createAsset("y", "Y", "AVAILABLE"),
+      ];
+      // Treat "x" as checked out even though its raw status is AVAILABLE.
+      const result = groupAndSortAssetsByKit(assets, "status", "desc", {
+        isCheckedOut: (a) => a.id === "x",
+      });
+      expect(result.map((a) => a.id)).toEqual(["y", "x"]);
     });
   });
 
-  describe("sorting by category", () => {
-    it("sorts kits by first asset's category", () => {
+  describe("sorting by item type", () => {
+    it("groups kits first then assets (desc)", () => {
       const assets = [
-        createAsset("1", "Asset", "AVAILABLE", "kit-a", "Kit A", "Zebra Cat"),
-        createAsset("2", "Asset", "AVAILABLE", "kit-b", "Kit B", "Apple Cat"),
+        createAsset("solo", "Solo", "AVAILABLE"),
+        createAsset("m", "member", "AVAILABLE", "kit-1", "Kit A"),
       ];
-
-      const result = groupAndSortAssetsByKit(assets, "category", "asc");
-
-      expect(result[0].kit?.name).toBe("Kit B"); // Apple Cat comes first
-      expect(result[1].kit?.name).toBe("Kit A");
+      const result = groupAndSortAssetsByKit(assets, "type", "desc");
+      expect(result.map((a) => a.id)).toEqual(["m", "solo"]);
     });
 
-    it("sorts individual assets by category", () => {
+    it("groups assets first then kits (asc)", () => {
       const assets = [
-        createAsset("1", "Asset A", "AVAILABLE", null, null, "Zebra"),
-        createAsset("2", "Asset B", "AVAILABLE", null, null, "Apple"),
+        createAsset("m", "member", "AVAILABLE", "kit-1", "Kit A"),
+        createAsset("solo", "Solo", "AVAILABLE"),
       ];
-
-      const result = groupAndSortAssetsByKit(assets, "category", "asc");
-
-      expect(result[0].category?.name).toBe("Apple");
-      expect(result[1].category?.name).toBe("Zebra");
+      const result = groupAndSortAssetsByKit(assets, "type", "asc");
+      expect(result.map((a) => a.id)).toEqual(["solo", "m"]);
     });
 
-    it("handles null categories (sorts to end)", () => {
+    it("orders multiple kits and assets alphabetically within their bucket", () => {
       const assets = [
-        createAsset("1", "Asset A", "AVAILABLE", null, null, null),
-        createAsset("2", "Asset B", "AVAILABLE", null, null, "Apple"),
+        createAsset("z", "Zebra", "AVAILABLE"),
+        createAsset("a", "Apple", "AVAILABLE"),
+        createAsset("kb", "member", "AVAILABLE", "kit-b", "Beta Kit"),
+        createAsset("ka", "member", "AVAILABLE", "kit-a", "Alpha Kit"),
       ];
+      const result = groupAndSortAssetsByKit(assets, "type", "desc");
+      // Kits first (Alpha, Beta), then assets (Apple, Zebra).
+      expect(result.map((a) => a.id)).toEqual(["ka", "kb", "a", "z"]);
+    });
+  });
 
+  describe("sorting by category (flat, nulls last)", () => {
+    it("interleaves kits and assets by category, nulls last", () => {
+      const assets = [
+        createAsset("n", "NoCat", "AVAILABLE"),
+        createAsset("m", "member", "AVAILABLE", "kit-1", "Kit", "Beta"),
+        createAsset("a", "AlphaCat", "AVAILABLE", null, null, "Alpha"),
+      ];
       const result = groupAndSortAssetsByKit(assets, "category", "asc");
+      // Alpha(a) < Beta(kit member m) < null(n)
+      expect(result.map((a) => a.id)).toEqual(["a", "m", "n"]);
+    });
+  });
 
-      expect(result[0].category?.name).toBe("Apple");
-      expect(result[1].category).toBeNull();
+  describe("sorting by location (flat, nulls last)", () => {
+    it("interleaves kits and assets by location, nulls last", () => {
+      const assets = [
+        createAsset("n", "NoLoc", "AVAILABLE"),
+        createAsset(
+          "m",
+          "member",
+          "AVAILABLE",
+          "kit-1",
+          "Kit",
+          null,
+          null,
+          "Warehouse B"
+        ),
+        createAsset("a", "AtA", "AVAILABLE", null, null, null, "Warehouse A"),
+      ];
+      const result = groupAndSortAssetsByKit(assets, "location", "asc");
+      // Warehouse A(a) < Warehouse B(kit member m) < null(n)
+      expect(result.map((a) => a.id)).toEqual(["a", "m", "n"]);
     });
   });
 
   describe("edge cases", () => {
-    it("handles empty array", () => {
-      const result = groupAndSortAssetsByKit([], "title", "asc");
-      expect(result).toEqual([]);
+    it("handles an empty array", () => {
+      expect(groupAndSortAssetsByKit([], "title", "asc")).toEqual([]);
     });
 
-    it("handles array with only individual assets", () => {
+    it("handles only individual assets", () => {
       const assets = [
-        createAsset("1", "Asset B", "AVAILABLE"),
-        createAsset("2", "Asset A", "AVAILABLE"),
+        createAsset("b", "Banana", "AVAILABLE"),
+        createAsset("a", "Apple", "AVAILABLE"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      expect(result).toHaveLength(2);
-      expect(result[0].title).toBe("Asset A");
-      expect(result[1].title).toBe("Asset B");
+      expect(result.map((a) => a.id)).toEqual(["a", "b"]);
     });
 
-    it("handles array with only kit assets", () => {
+    it("handles only kit assets", () => {
       const assets = [
-        createAsset("1", "Asset B", "AVAILABLE", "kit-1", "Kit"),
-        createAsset("2", "Asset A", "AVAILABLE", "kit-1", "Kit"),
+        createAsset("2", "member", "AVAILABLE", "kit-b", "Beta Kit"),
+        createAsset("1", "member", "AVAILABLE", "kit-a", "Alpha Kit"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "title", "asc");
-
-      expect(result).toHaveLength(2);
-      expect(result[0].title).toBe("Asset A");
-      expect(result[1].title).toBe("Asset B");
+      expect(result.map((a) => a.kitId)).toEqual(["kit-a", "kit-b"]);
     });
 
-    it("uses default values when orderBy is unknown", () => {
+    it("falls back to status ordering for an unknown orderBy", () => {
       const assets = [
-        createAsset("1", "Asset", "AVAILABLE"),
-        createAsset("2", "Asset", "CHECKED_OUT"),
+        createAsset("out", "A", "CHECKED_OUT"),
+        createAsset("avail", "B", "AVAILABLE"),
       ];
-
       const result = groupAndSortAssetsByKit(assets, "unknown", "desc");
-
-      // Falls back to status sorting
-      expect(result[0].status).toBe("CHECKED_OUT");
-      expect(result[1].status).toBe("AVAILABLE");
+      expect(result.map((a) => a.id)).toEqual(["avail", "out"]);
     });
-  });
-});
-
-describe("groupAndSortAssetsByKit — location", () => {
-  it("sorts individual assets by location name ascending", () => {
-    const assets = [
-      createAsset("1", "A", "AVAILABLE", null, null, null, "Warehouse B"),
-      createAsset("2", "B", "AVAILABLE", null, null, null, "Warehouse A"),
-    ];
-
-    const result = groupAndSortAssetsByKit(assets, "location", "asc");
-
-    expect(result[0].location?.name).toBe("Warehouse A");
-    expect(result[1].location?.name).toBe("Warehouse B");
-  });
-
-  it("places assets with no location at the end regardless of direction", () => {
-    const assets = [
-      createAsset("1", "NoLoc", "AVAILABLE"),
-      createAsset("2", "HasLoc", "AVAILABLE", null, null, null, "Shelf 1"),
-    ];
-
-    const ascResult = groupAndSortAssetsByKit(assets, "location", "asc");
-    expect(ascResult[0].location?.name).toBe("Shelf 1");
-    expect(ascResult[1].location).toBeNull();
-
-    const descResult = groupAndSortAssetsByKit(assets, "location", "desc");
-    expect(descResult[1].location).toBeNull();
-  });
-
-  it("sorts kit groups by the kit's own location", () => {
-    const assets = [
-      createAsset(
-        "1",
-        "A",
-        "AVAILABLE",
-        "kit-z",
-        "Kit Z",
-        null,
-        null,
-        "Zone Z"
-      ),
-      createAsset(
-        "2",
-        "B",
-        "AVAILABLE",
-        "kit-a",
-        "Kit A",
-        null,
-        null,
-        "Zone A"
-      ),
-    ];
-
-    const result = groupAndSortAssetsByKit(assets, "location", "asc");
-
-    expect(result[0].kit?.name).toBe("Kit A");
-    expect(result[1].kit?.name).toBe("Kit Z");
   });
 });
 
@@ -413,5 +352,140 @@ describe("filterBookingAssets", () => {
     ];
     const result = filterBookingAssets(assets, "match");
     expect(result.map((a) => a.id)).toEqual(["a3", "a1", "a2"]);
+  });
+});
+
+describe("isAssetCheckoutEligible", () => {
+  const noneCheckedOut = new Set<string>();
+  const noneReturned = new Set<string>();
+
+  it("is eligible when AVAILABLE and not checked out or returned", () => {
+    expect(
+      isAssetCheckoutEligible(
+        { id: "a1", status: AssetStatus.AVAILABLE },
+        noneCheckedOut,
+        noneReturned
+      )
+    ).toBe(true);
+  });
+
+  it("is not eligible when live status is CHECKED_OUT", () => {
+    expect(
+      isAssetCheckoutEligible(
+        { id: "a1", status: AssetStatus.CHECKED_OUT },
+        noneCheckedOut,
+        noneReturned
+      )
+    ).toBe(false);
+  });
+
+  it("is not eligible when in custody", () => {
+    expect(
+      isAssetCheckoutEligible(
+        { id: "a1", status: AssetStatus.IN_CUSTODY },
+        noneCheckedOut,
+        noneReturned
+      )
+    ).toBe(false);
+  });
+
+  it("is not eligible when recorded as already checked out (even if AVAILABLE)", () => {
+    expect(
+      isAssetCheckoutEligible(
+        { id: "a1", status: AssetStatus.AVAILABLE },
+        new Set(["a1"]),
+        noneReturned
+      )
+    ).toBe(false);
+  });
+
+  it("is not eligible when already returned via partial check-in (AVAILABLE again but done)", () => {
+    expect(
+      isAssetCheckoutEligible(
+        { id: "a1", status: AssetStatus.AVAILABLE },
+        noneCheckedOut,
+        new Set(["a1"])
+      )
+    ).toBe(false);
+  });
+});
+
+describe("countRemainingCheckoutAssets", () => {
+  it("counts only assets still eligible to check out", () => {
+    const bookingAssets = [
+      { id: "a1", status: AssetStatus.AVAILABLE },
+      { id: "a2", status: AssetStatus.AVAILABLE },
+      { id: "a3", status: AssetStatus.CHECKED_OUT },
+      { id: "a4", status: AssetStatus.IN_CUSTODY },
+    ];
+    // a3 is live CHECKED_OUT, a4 is in custody → only a1, a2 remain.
+    expect(countRemainingCheckoutAssets(bookingAssets, [], [])).toBe(2);
+  });
+
+  it("excludes assets returned via partial check-in from the denominator", () => {
+    // The reported bug: 16 booked, 2 returned via check-in must show /14, not
+    // /16. Returned assets are AVAILABLE again but must not be re-counted.
+    const bookingAssets = Array.from({ length: 16 }, (_, i) => ({
+      id: `a${i + 1}`,
+      status: AssetStatus.AVAILABLE,
+    }));
+    expect(countRemainingCheckoutAssets(bookingAssets, [], ["a1", "a2"])).toBe(
+      14
+    );
+  });
+
+  it("excludes already-checked-out (recorded) assets even when AVAILABLE", () => {
+    const bookingAssets = [
+      { id: "a1", status: AssetStatus.AVAILABLE },
+      { id: "a2", status: AssetStatus.AVAILABLE },
+    ];
+    expect(countRemainingCheckoutAssets(bookingAssets, ["a1"], [])).toBe(1);
+  });
+
+  it("returns 0 when nothing is eligible", () => {
+    const bookingAssets = [
+      { id: "a1", status: AssetStatus.CHECKED_OUT },
+      { id: "a2", status: AssetStatus.IN_CUSTODY },
+    ];
+    expect(countRemainingCheckoutAssets(bookingAssets, [], [])).toBe(0);
+  });
+});
+
+describe("shouldPromptEarlyCheckout", () => {
+  const future = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1); // well beyond the 15-min buffer
+    return d;
+  };
+  const past = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d;
+  };
+
+  it("prompts when the booking is RESERVED and starts in the future", () => {
+    expect(shouldPromptEarlyCheckout(BookingStatus.RESERVED, future())).toBe(
+      true
+    );
+  });
+
+  it("does NOT prompt when the booking is already ONGOING (start date fixed)", () => {
+    // The reported bug: 'Check out remaining' on an ONGOING booking must not
+    // trigger the adjust-start-date prompt.
+    expect(shouldPromptEarlyCheckout(BookingStatus.ONGOING, future())).toBe(
+      false
+    );
+  });
+
+  it("does NOT prompt when the booking is OVERDUE", () => {
+    expect(shouldPromptEarlyCheckout(BookingStatus.OVERDUE, future())).toBe(
+      false
+    );
+  });
+
+  it("does NOT prompt when RESERVED but the start date has already passed", () => {
+    expect(shouldPromptEarlyCheckout(BookingStatus.RESERVED, past())).toBe(
+      false
+    );
   });
 });

@@ -99,11 +99,14 @@ export type FailureReason = {
     | "Environment" // Related to the environment setup
     | "Image Import"
     | "Image Cache"
+    | "Asset Model"
     | "Asset Reminder"
     | "Asset Scheduler" // Error related to the image import
     | "Audit"
     | "Activity"
-    | "Update";
+    | "Consumption Log"
+    | "Update"
+    | "Analytics";
   /**
    * The message intended for the user.
    * You can add new lines using \n which will be parsed into paragraphs in the html
