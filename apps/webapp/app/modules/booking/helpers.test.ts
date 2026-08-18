@@ -657,6 +657,10 @@ describe("buildPdfAssetRows", () => {
         id: string;
         name: string;
         location: { name: string } | null;
+        minimizeInPdf?: boolean | null;
+        image?: string | null;
+        imageExpiration?: Date | null;
+        description?: string | null;
       } | null;
     }>;
     assetLocations: Array<{ location: { name: string } | null }>;
@@ -937,6 +941,10 @@ describe("buildPdfAssetRows", () => {
       id: "kit-b1",
       name: "b1 (live)",
       location: null,
+      description: null,
+      image: null,
+      imageExpiration: null,
+      minimizeInPdf: null,
     });
   });
 
