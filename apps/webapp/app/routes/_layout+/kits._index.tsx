@@ -12,6 +12,7 @@ import { useKitAvailabilityData } from "~/components/assets/assets-index/use-kit
 import { AvailabilityViewToggle } from "~/components/assets/assets-index/view-toggle";
 import { CategoryBadge } from "~/components/assets/category-badge";
 import AvailabilityCalendar from "~/components/availability-calendar/availability-calendar";
+import { ResourceTitleLink } from "~/components/availability-calendar/resource-title-link";
 import { StatusFilter } from "~/components/booking/status-filter";
 import DynamicDropdown from "~/components/dynamic-dropdown/dynamic-dropdown";
 import { ChevronRight } from "~/components/icons/library";
@@ -47,6 +48,7 @@ import type { KITS_INCLUDE_FIELDS } from "~/modules/kit/types";
 import calendarStyles from "~/styles/layout/calendar.css?url";
 import { appendToMetaTitle } from "~/utils/append-to-meta-title";
 import { getFiltersFromRequest, setCookie } from "~/utils/cookies.server";
+import { redactCustodianForViewer } from "~/utils/custody-visibility.server";
 import { makeShelfError, ShelfError } from "~/utils/error";
 import { computeHasActiveFilters } from "~/utils/filter-params";
 import { payload, error, getCurrentSearchParams } from "~/utils/http.server";
@@ -99,6 +101,17 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
       return redirect(`/kits?${cookieParams.toString()}`);
     }
 
+    /**
+     * Custody scope for the custodian picker, shared by its rows AND its count
+     * so the two cannot disagree — the same rule `custody-filter` resolves on
+     * the search endpoint.
+     */
+    const custodianFilterWhere = {
+      deletedAt: null,
+      organizationId,
+      userId: !canSeeAllCustody ? userId : undefined,
+    };
+
     let [
       { kits, totalKits, perPage, page, totalPages, search },
       teamMembers,
@@ -108,6 +121,10 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
       getPaginatedAndFilterableKits({
         request,
         organizationId,
+        // Governs `?teamMember=`: a viewer who may not see all custody may
+        // only ever filter this list by their own custody.
+        canSeeAllCustody,
+        userId,
         extraInclude: {
           qrCodes: { select: { id: true } },
           assetKits: {
@@ -168,8 +185,23 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
                             // iterating (`kitId: kit.id`), so the DB never
                             // needs to supply it.
                             custodianUserId: true,
-                            custodianTeamMember: true,
-                            custodianUser: true,
+                            // Narrowed from `true` on both: that shipped the
+                            // whole TeamMember row and the ENTIRE User row —
+                            // email, Stripe `customerId`, billing flags — to
+                            // render a name and an avatar on the availability
+                            // calendar.
+                            custodianTeamMember: {
+                              select: { id: true, name: true, userId: true },
+                            },
+                            custodianUser: {
+                              select: {
+                                id: true,
+                                firstName: true,
+                                lastName: true,
+                                displayName: true,
+                                profilePicture: true,
+                              },
+                            },
                           },
                         },
                       },
@@ -185,11 +217,7 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
       }),
       db.teamMember
         .findMany({
-          where: {
-            deletedAt: null,
-            organizationId,
-            userId: !canSeeAllCustody ? userId : undefined,
-          },
+          where: custodianFilterWhere,
           include: { user: true },
           orderBy: { userId: "asc" },
           take: searchParams.get("getAll") === "teamMember" ? undefined : 12,
@@ -203,7 +231,11 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
             label: "Assets",
           });
         }),
-      db.teamMember.count({ where: { deletedAt: null, organizationId } }),
+      // Same `where` as the rows above: counting unscoped while the rows are
+      // scoped puts the workspace's team-member total in a restricted user's
+      // loader payload, and makes the picker's "showing N out of M" disagree
+      // with what the search endpoint returns.
+      db.teamMember.count({ where: custodianFilterWhere }),
       getLocationsForCreateAndEdit({
         organizationId,
         request,
@@ -232,7 +264,11 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
     return data(
       payload({
         header,
-        items: kits,
+        // `TeamMemberBadge` only decides whether to DRAW the custodian; the
+        // name and `user.email` shipped in this payload regardless, so a
+        // restricted viewer read them straight out of `/kits.data` while the
+        // page showed "private". Redact server-side.
+        items: redactCustodianForViewer(kits, { canSeeAllCustody, userId }),
         page,
         totalItems: totalKits,
         totalPages,
@@ -320,15 +356,27 @@ export default function KitsIndexPage() {
                   <ChevronRight className="hidden rotate-90 md:inline" />
                 </div>
               }
-              model={{ name: "teamMember", queryKey: "name", deletedAt: null }}
+              model={{
+                name: "teamMember",
+                queryKey: "name",
+                deletedAt: null,
+                // A read FILTER — the workspace custody override governs.
+                custodyPurpose: "custody-filter",
+              }}
               label="Filter by custodian"
               placeholder="Search team members"
               countKey="totalTeamMembers"
               initialDataKey="teamMembers"
-              transformItem={(item) => ({
-                ...item,
-                id: item.metadata?.userId ? item.metadata.userId : item.id,
-              })}
+              /*
+               * No `transformItem`: the value this filter submits must stay the
+               * TeamMember id, because `getPaginatedAndFilterableKits` applies it
+               * as `custody: { custodianId }` — a TeamMember FK. Rewriting it to
+               * `metadata.userId` only took effect once the user typed (the
+               * loader's records carry no `metadata`, the search endpoint's do),
+               * so picking from the list filtered correctly while searching first
+               * returned nothing. Matches the assets advanced filter, which
+               * passes the item through unchanged.
+               */
               renderItem={(item) => resolveTeamMemberName(item, true)}
             />
           )}
@@ -349,21 +397,14 @@ export default function KitsIndexPage() {
                       alt: resource.title,
                     }}
                     alt={resource.title}
-                    className="size-14 rounded border object-cover"
+                    className="size-14 shrink-0 rounded border object-cover"
                     withPreview
                   />
-                  <div className="flex flex-col gap-1">
-                    <div className="min-w-0 flex-1 truncate">
-                      <Button
-                        to={`/kits/${resource.id}/assets`}
-                        variant="link"
-                        className="text-left font-medium text-gray-900 hover:text-gray-700"
-                        target={"_blank"}
-                        onlyNewTabIconOnHover={true}
-                      >
-                        {resource.title}
-                      </Button>
-                    </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <ResourceTitleLink
+                      to={`/kits/${resource.id}/assets`}
+                      title={resource.title}
+                    />
                     <div className="flex items-center gap-2">
                       <KitStatusBadge
                         status={resource.extendedProps?.status}

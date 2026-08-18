@@ -1,3 +1,4 @@
+import { BOOKING_STATUS_LABELS } from "@shelf/labels";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
@@ -24,10 +25,10 @@ import {
   spacing,
   borderRadius,
   formatStatus,
-  formatDateTime,
   bookingCountdown,
   hitSlop,
 } from "@/lib/constants";
+import { useDateFormatter } from "@/lib/use-date-formatter";
 import { useTheme } from "@/lib/theme-context";
 import { createStyles } from "@/lib/create-styles";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -42,24 +43,76 @@ import {
 const PAGE_SIZE = 20;
 const bookingKeyExtractor = (item: BookingListItem) => item.id;
 
+/** One status filter pill, plus the copy its empty state renders. */
+type StatusFilter = {
+  /** Chip text. Status filters read from `@shelf/labels`; groups are prose. */
+  label: string;
+  /** Comma-separated `BookingStatus` subset sent to the list route. */
+  value: string;
+  /** Empty-state heading shown when this filter matches nothing. */
+  emptyTitle: string;
+  /** Empty-state body shown under `emptyTitle`. */
+  emptyHint: string;
+};
+
 /**
  * Status filter pills. The mobile list route already accepts any
  * comma-separated subset of statuses, so we expose the field-critical
  * individual statuses (Reserved = upcoming, Ongoing = in progress, Overdue =
- * needs attention) alongside the grouped Active/Completed/All — letting a tech
+ * needs attention) alongside the grouped Active/Complete/All — letting a tech
  * isolate exactly what they care about on a job.
+ *
+ * why: the empty-state copy is spelled out per filter instead of being derived
+ * from `label`. Deriving it broke in two directions — a chip label is a noun
+ * ("Complete") where the sentence needs a participle ("No completed bookings"),
+ * and the grouped filters have no grammatical form at all ("No all bookings").
+ * Pairing the copy with the filter also removes the hardcoded indices the old
+ * empty state branched on, which silently went stale when this array grew.
  */
-const STATUS_FILTERS: { label: string; value: string }[] = [
+const STATUS_FILTERS: StatusFilter[] = [
   // DRAFT counts as active: a booking being built (e.g. scan-to-add) must
   // not vanish from the default view the moment the user leaves it.
-  { label: "Active", value: "DRAFT,RESERVED,ONGOING,OVERDUE" },
-  { label: "Reserved", value: "RESERVED" },
-  { label: "Ongoing", value: "ONGOING" },
-  { label: "Overdue", value: "OVERDUE" },
-  { label: "Completed", value: "COMPLETE" },
+  {
+    label: "Active",
+    value: "DRAFT,RESERVED,ONGOING,OVERDUE",
+    emptyTitle: "No active bookings",
+    emptyHint: "Active bookings will appear here when created",
+  },
+  // why: the four single-status chips below read from @shelf/labels rather
+  // than being hand-typed. The COMPLETE one is where that drifted visibly — it
+  // said "Completed" while the badge on the very same row said "Complete",
+  // because badges go through formatStatus and these did not.
+  {
+    label: BOOKING_STATUS_LABELS.RESERVED,
+    value: "RESERVED",
+    emptyTitle: "No reserved bookings",
+    emptyHint: "Try selecting a different status filter",
+  },
+  {
+    label: BOOKING_STATUS_LABELS.ONGOING,
+    value: "ONGOING",
+    emptyTitle: "No ongoing bookings",
+    emptyHint: "Try selecting a different status filter",
+  },
+  {
+    label: BOOKING_STATUS_LABELS.OVERDUE,
+    value: "OVERDUE",
+    emptyTitle: "No overdue bookings",
+    emptyHint: "Nothing is past its due date — nothing to chase",
+  },
+  {
+    label: BOOKING_STATUS_LABELS.COMPLETE,
+    value: "COMPLETE",
+    emptyTitle: "No completed bookings",
+    emptyHint: "Try selecting a different status filter",
+  },
   {
     label: "All",
     value: "DRAFT,RESERVED,ONGOING,OVERDUE,COMPLETE,ARCHIVED,CANCELLED",
+    emptyTitle: "No bookings",
+    // why: "All" is already the broadest filter, so telling the user to try a
+    // different one is a dead end.
+    emptyHint: "Bookings you create will appear here",
   },
 ];
 
@@ -98,6 +151,7 @@ function BookingsListContent() {
   } = useOrg();
   const { colors, bookingStatusBadge } = useTheme();
   const styles = useStyles();
+  const { formatDateTime } = useDateFormatter();
   const [bookings, setBookings] = useState<BookingListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -294,7 +348,11 @@ function BookingsListContent() {
           activeOpacity={0.6}
           accessibilityLabel={`Booking: ${item.name}, ${formatStatus(
             item.status
-          )}, ${item.assetCount} assets`}
+          )}, ${item.assetCount} assets${
+            (item.outstandingModelUnitCount ?? 0) > 0
+              ? `, ${item.outstandingModelUnitCount} reserved`
+              : ""
+          }`}
           accessibilityRole="button"
         >
           <View style={styles.bookingHeader}>
@@ -351,6 +409,15 @@ function BookingsListContent() {
               />
               <Text style={styles.metaText}>
                 {item.assetCount} {item.assetCount === 1 ? "asset" : "assets"}
+                {/* A booking can hold reserved units with no concrete asset
+                    behind them yet, and `assetCount` only counts concrete
+                    rows. Without this the card reads "0 assets" while the
+                    action hint below says "Assign assets to check out" — and
+                    the reserved units are genuinely held, unavailable to
+                    everyone else. Same signal, every surface. */}
+                {(item.outstandingModelUnitCount ?? 0) > 0
+                  ? ` · ${item.outstandingModelUnitCount} reserved`
+                  : ""}
               </Text>
             </View>
 
@@ -370,26 +437,40 @@ function BookingsListContent() {
 
           {isActive && (
             <View style={styles.actionHint}>
+              {/* A RESERVED booking is only "ready to check out" when it has
+                  concrete assets AND no outstanding book-by-model reservations
+                  (the server hard-blocks checkout until every reserved unit is
+                  assigned). Otherwise the honest next step is to assign/add
+                  assets, so the hint points there instead of promising a
+                  checkout that isn't possible yet. */}
               <Ionicons
                 name={
-                  item.status === "RESERVED"
+                  item.status !== "RESERVED"
+                    ? "log-in-outline"
+                    : (item.outstandingModelCount ?? 0) > 0
+                    ? "cube-outline"
+                    : item.assetCount > 0
                     ? "log-out-outline"
-                    : "log-in-outline"
+                    : "add-outline"
                 }
                 size={14}
                 color={colors.iconDefault}
               />
               <Text style={styles.actionHintText}>
-                {item.status === "RESERVED"
+                {item.status !== "RESERVED"
+                  ? "Tap to check in"
+                  : (item.outstandingModelCount ?? 0) > 0
+                  ? "Assign assets to check out"
+                  : item.assetCount > 0
                   ? "Ready to check out"
-                  : "Tap to check in"}
+                  : "Add assets to check out"}
               </Text>
             </View>
           )}
         </TouchableOpacity>
       );
     },
-    [router, colors, bookingStatusBadge, styles]
+    [router, colors, bookingStatusBadge, styles, formatDateTime]
   );
 
   if (orgLoading) {
@@ -538,18 +619,10 @@ function BookingsListContent() {
                 color={colors.border}
               />
               <Text style={styles.emptyTitle}>
-                {activeFilter === 0
-                  ? "No active bookings"
-                  : activeFilter === 2
-                  ? "No bookings"
-                  : `No ${STATUS_FILTERS[
-                      activeFilter
-                    ].label.toLowerCase()} bookings`}
+                {STATUS_FILTERS[activeFilter].emptyTitle}
               </Text>
               <Text style={styles.emptyText}>
-                {activeFilter === 0
-                  ? "Active bookings will appear here when created"
-                  : "Try selecting a different status filter"}
+                {STATUS_FILTERS[activeFilter].emptyHint}
               </Text>
             </View>
           ) : (

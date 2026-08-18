@@ -19,6 +19,7 @@ import { sendEmail } from "~/emails/mail.server";
 import { organizationRolesMap } from "~/routes/_layout+/settings.team";
 import { INVITE_EXPIRY_TTL_DAYS } from "~/utils/constants";
 import { updateCookieWithPerPage } from "~/utils/cookies.server";
+import type { DetectedFormatPrefs } from "~/utils/date-format";
 import { sendNotification } from "~/utils/emitter/send-notification.server";
 import { INVITE_TOKEN_SECRET } from "~/utils/env";
 import type { ErrorLabel } from "~/utils/error";
@@ -28,6 +29,7 @@ import { getParamsValues } from "~/utils/list";
 import { checkDomainSSOStatus, doesSSOUserExist } from "~/utils/sso.server";
 import { generateRandomCode, inviteEmailText, splitName } from "./helpers";
 import { processInvitationMessage } from "./message-validator.server";
+import { isInvitableRole } from "./roles";
 import { createTeamMember } from "../team-member/service.server";
 import { createUserOrAttachOrg } from "../user/service.server";
 
@@ -315,7 +317,12 @@ export async function updateInviteStatus({
   id,
   status,
   password,
-}: Pick<Invite, "id" | "status"> & { password: string }) {
+  formatPrefs,
+}: Pick<Invite, "id" | "status"> & {
+  password: string;
+  /** Browser-detected prefs from the accept-invite action; stamped on new users. */
+  formatPrefs?: DetectedFormatPrefs;
+}) {
   try {
     const invite = await db.invite.findFirst({
       // eslint-disable-next-line local-rules/require-org-scope-on-id-queries -- idor-safe: pre-org invite-acceptance flow; `id` comes from a JWT verified with INVITE_TOKEN_SECRET in the accept-invite action and the user is not yet a member of the org, so there is no caller organizationId to scope by — the invite record establishes the org relationship
@@ -363,6 +370,32 @@ export async function updateInviteStatus({
     const data = { status };
 
     if (status === "ACCEPTED") {
+      /**
+       * The creation-time guards cannot protect an invite that already exists.
+       * Rows written before those guards landed — or by any future path that
+       * forgets to validate — still carry their stored roles, and they are
+       * handed to `createUserOrAttachOrg` verbatim below, which writes them
+       * straight into `UserOrganization.roles`.
+       *
+       * An invite granting OWNER can only have come from that gap, so it is
+       * refused outright rather than silently downgraded: honouring it in any
+       * form would hand out access the workspace owner never approved through a
+       * supported flow, and quietly rewriting the role would hide that
+       * something anomalous happened.
+       */
+      if (!invite.roles.every(isInvitableRole)) {
+        throw new ShelfError({
+          cause: null,
+          title: "Invite is no longer valid",
+          message:
+            "This invite grants a role that can no longer be assigned. Please ask your administrator to send you a new invite.",
+          additionalData: { inviteId: invite.id, roles: invite.roles },
+          label,
+          status: 400,
+          shouldBeCaptured: false,
+        });
+      }
+
       const { firstName, lastName } = splitName(invite.inviteeTeamMember.name);
 
       const user = await createUserOrAttachOrg({
@@ -373,6 +406,7 @@ export async function updateInviteStatus({
         firstName,
         lastName,
         createdWithInvite: true,
+        formatPrefs,
       });
 
       Object.assign(data, {
@@ -627,6 +661,31 @@ export async function bulkInviteUsers({
         user.email.trim() !== "" &&
         user.role.trim() !== ""
     );
+
+    /**
+     * Defense in depth: `users` is typed as `InviteUserSchema[]`, but that type
+     * comes from `z.infer` and is never enforced at runtime — the CSV import
+     * hands over raw strings parsed out of an uploaded file. The route
+     * validates them, and so must this, because `payload.role` is written
+     * straight into `Invite.roles` below and permissions resolve from
+     * `UserOrganization.roles` after acceptance.
+     */
+    const disallowedRoles = validUsers
+      .map((user) => user.role)
+      .filter((role) => !isInvitableRole(role));
+
+    if (disallowedRoles.length > 0) {
+      throw new ShelfError({
+        cause: null,
+        message: `Invites cannot grant these roles: ${[
+          ...new Set(disallowedRoles),
+        ].join(", ")}. Ownership moves only through ownership transfer.`,
+        additionalData: { organizationId, disallowedRoles },
+        label,
+        status: 400,
+        shouldBeCaptured: false,
+      });
+    }
 
     // Filter out duplicate emails
     const uniquePayloads = lodash.uniqBy(validUsers, (user) => user.email);

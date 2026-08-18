@@ -1,12 +1,18 @@
 import { data, type ActionFunctionArgs } from "react-router";
 import { z } from "zod";
+import { db } from "~/database/db.server";
 import {
+  getMobileUserContext,
   requireMobileAuth,
   requireMobilePermission,
   requireOrganizationAccess,
   assertMobileCanUseBookings,
 } from "~/modules/api/mobile-auth.server";
 import { partialCheckoutBooking } from "~/modules/booking/service.server";
+import {
+  resolveMostPrivilegedRole,
+  validateBookingOwnership,
+} from "~/utils/booking-authorization.server";
 import { getClientHint, type ClientHint } from "~/utils/client-hints";
 import { makeShelfError } from "~/utils/error";
 import {
@@ -52,7 +58,11 @@ export async function action({ request }: ActionFunctionArgs) {
     const { bookingId, assetIds, checkouts, timeZone } = z
       .object({
         bookingId: z.string().min(1),
-        assetIds: z.array(z.string().cuid()).min(1),
+        // Optional: a QT-only check-out sends its quantities in `checkouts` with
+        // an empty `assetIds`. INDIVIDUAL rows still flow through `assetIds`. The
+        // service 400s if BOTH are empty, so we don't require a minimum here
+        // (mirrors the partial-checkin route).
+        assetIds: z.array(z.string().cuid()).optional(),
         /**
          * Optional per-asset checkout payload mirroring the webapp check-in
          * JSON shape. When present, the service uses it to perform partial
@@ -81,6 +91,33 @@ export async function action({ request }: ActionFunctionArgs) {
       ...getClientHint(request),
       ...(timeZone ? { timeZone } : {}),
     };
+
+    // Org-scoped, so a foreign-org id 404s before the ownership check runs.
+    const existingBooking = await db.booking.findFirst({
+      where: { id: bookingId, organizationId },
+      select: { creatorId: true, custodianUserId: true },
+    });
+
+    if (!existingBooking) {
+      return data(
+        { error: { message: "Booking not found in this workspace." } },
+        { status: 404 }
+      );
+    }
+
+    // Cross-user IDOR guard: SELF_SERVICE holds `booking:checkout` in the
+    // permission map, so the role gate above passes for ANY booking id in the
+    // organization — they may only check out bookings they created or are
+    // custodian of. No-op for ADMIN/OWNER. `partialCheckoutBooking` does not check
+    // ownership itself, so without this the route is more permissive than web.
+    // Mirrors the guard added to bookings.fulfil-and-checkout.ts in 918d53d51.
+    const { roles } = await getMobileUserContext(user.id, organizationId);
+    validateBookingOwnership({
+      booking: existingBooking,
+      userId: user.id,
+      role: resolveMostPrivilegedRole(roles),
+      action: "check out",
+    });
 
     const result = await partialCheckoutBooking({
       id: bookingId,

@@ -1,6 +1,11 @@
 import type React from "react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { AuditStatus, AuditAssetStatus } from "@prisma/client";
+import {
+  AUDIT_ASSET_STATUS_LABELS,
+  auditAssetStatusLabel,
+  isAuditCompleted,
+} from "@shelf/labels";
 import { useReactToPrint } from "react-to-print";
 import useApiQuery from "~/hooks/use-api-query";
 import { getAuditStatusLabel } from "~/modules/audit/audit-filter-utils";
@@ -166,6 +171,14 @@ const AuditPDFContent = ({
     activityNotes,
   } = pdfMeta;
 
+  // why: the receipt can be downloaded at ANY point in an audit's life — the
+  // Actions dropdown offers it with no status gate — so it must apply the same
+  // completion rule as the screen it was printed from. `missingAssetCount` is
+  // seeded with the full expected count at creation, so a receipt for a
+  // never-started audit used to assert that every one of its assets was lost.
+  const auditIsCompleted = isAuditCompleted(session);
+  const unscannedLabel = auditAssetStatusLabel("PENDING", auditIsCompleted);
+
   // Format creator name from user data or fallback to email
   const creatorName =
     resolveUserDisplayName(session.createdBy) ||
@@ -293,10 +306,7 @@ const AuditPDFContent = ({
           <div className="flex border-b border-gray-300 p-2">
             <span className="min-w-[150px] text-sm font-medium">Due date</span>
             <span className="grow text-gray-600">
-              <DateS
-                date={session.dueDate!}
-                options={{ dateStyle: "short", timeStyle: "short" }}
-              />
+              <DateS date={session.dueDate!} includeTime />
             </span>
           </div>
         </When>
@@ -304,10 +314,7 @@ const AuditPDFContent = ({
           <div className="flex border-b border-gray-300 p-2">
             <span className="min-w-[150px] text-sm font-medium">Started</span>
             <span className="grow text-gray-600">
-              <DateS
-                date={session.startedAt!}
-                options={{ dateStyle: "short", timeStyle: "short" }}
-              />
+              <DateS date={session.startedAt!} includeTime />
             </span>
           </div>
         </When>
@@ -315,12 +322,7 @@ const AuditPDFContent = ({
           <div className="flex border-b border-gray-300 p-2">
             <span className="min-w-[150px] text-sm font-medium">Completed</span>
             <span className="grow text-gray-600">
-              {pdfMeta.to || (
-                <DateS
-                  date={session.completedAt!}
-                  options={{ dateStyle: "short", timeStyle: "short" }}
-                />
-              )}
+              {pdfMeta.to || <DateS date={session.completedAt!} includeTime />}
             </span>
           </div>
         </When>
@@ -350,19 +352,23 @@ const AuditPDFContent = ({
             <div className="text-2xl font-bold">
               {session.foundAssetCount ?? 0}
             </div>
-            <div className="text-sm text-gray-600">Found</div>
+            <div className="text-sm text-gray-600">
+              {AUDIT_ASSET_STATUS_LABELS.FOUND}
+            </div>
           </div>
           <div className="border border-gray-300 p-3 text-center">
             <div className="text-2xl font-bold">
               {session.missingAssetCount ?? 0}
             </div>
-            <div className="text-sm text-gray-600">Missing</div>
+            <div className="text-sm text-gray-600">{unscannedLabel}</div>
           </div>
           <div className="border border-gray-300 p-3 text-center">
             <div className="text-2xl font-bold">
               {session.unexpectedAssetCount ?? 0}
             </div>
-            <div className="text-sm text-gray-600">Unexpected</div>
+            <div className="text-sm text-gray-600">
+              {AUDIT_ASSET_STATUS_LABELS.UNEXPECTED}
+            </div>
           </div>
         </div>
       </section>
@@ -501,7 +507,11 @@ const AuditPDFContent = ({
                       )}
                     </td>
                     <td className="border border-gray-300 p-2.5 align-top text-xs">
-                      {/* Convert AuditAssetStatus to AuditStatusLabel for badge display */}
+                      {/* Convert AuditAssetStatus to AuditStatusLabel for badge
+                          display. Pass the audit's completion state so these
+                          rows agree with the Statistics tile above them — the
+                          two used to read "Not scanned" and "Missing" for the
+                          same assets in the same PDF. */}
                       <AuditAssetStatusBadge
                         status={getAuditStatusLabel(
                           asset.auditData.auditStatus
@@ -509,7 +519,8 @@ const AuditPDFContent = ({
                                 expected: boolean;
                                 auditStatus: AuditAssetStatus;
                               })
-                            : null
+                            : null,
+                          auditIsCompleted
                         )}
                       />
                     </td>
@@ -553,10 +564,7 @@ const AuditPDFContent = ({
                   )}
                 >
                   <div className="min-w-[140px] text-xs text-gray-500">
-                    <DateS
-                      date={note.createdAt}
-                      options={{ dateStyle: "short", timeStyle: "short" }}
-                    />
+                    <DateS date={note.createdAt} includeTime />
                   </div>
                   <div className="flex-1">
                     <div className="text-xs">

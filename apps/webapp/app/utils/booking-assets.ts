@@ -266,14 +266,32 @@ export function isAssetCheckableOut(
  * - a direct asset (`title`, no `_count`).
  *
  * Asset entries are merged with their booking-scoped record from
- * `bookingAssets` so `status`/`kitId` are authoritative (the atom entry can be
- * stale). Kit entries are returned flattened (`name`/`_count`) for rendering.
- * This logic was previously duplicated verbatim in both dialogs; extracting it
- * removes the drift that caused the bulk check-in bug.
+ * `bookingAssets` so genuine gaps in the selection are filled. Kit entries are
+ * returned flattened (`name`/`_count`) for rendering. This logic was previously
+ * duplicated verbatim in both dialogs; extracting it removes the drift that
+ * caused the bulk check-in bug.
+ *
+ * ### Per-slice enrichment (multi-slice QT support)
+ *
+ * A single `asset.id` can span MULTIPLE `BookingAsset` slices — e.g. a
+ * QUANTITY_TRACKED asset booked both standalone (`kitId: null`) and inside a
+ * kit (`kitId` set) is two distinct rows sharing one `asset.id`. To keep the
+ * two slices distinct we key the enrichment map by `bookingAssetId` (falling
+ * back to `id` for legacy entries that lack one), and look each selected item
+ * up by `item.bookingAssetId ?? item.id`.
+ *
+ * The merge lets the SELECTED item WIN (`{ ...bookingAsset, ...item }`): the
+ * selection atom holds the full enriched loader row, so its
+ * `bookingAssetId`/`kitId`/`kit` are authoritative — the booking record only
+ * fills genuine gaps. Merging the other way round would let a different slice's
+ * `kitId` clobber the selected standalone slice's `kitId: null`, so the row
+ * would render in neither the kit nor the individual bucket (the multi-slice
+ * checkout bug this fix addresses).
  *
  * @param selectedItems - Raw entries from `selectedBulkItemsAtom`.
- * @param bookingAssets - The booking's assets (`booking.assets`), used to
- *   enrich asset entries by id.
+ * @param bookingAssets - The booking's assets (one entry per `BookingAsset`
+ *   slice, each ideally carrying `bookingAssetId`), used to enrich asset
+ *   entries by slice.
  * @returns The flattened, enriched list (assets + kit entries), UNFILTERED —
  *   callers apply their own eligibility filter.
  */
@@ -281,16 +299,23 @@ export function flattenSelectedBookingItems(
   selectedItems: SelectedBookingItem[],
   bookingAssets: AssetWithStatus[]
 ): SelectedBookingItem[] {
+  // Key by `bookingAssetId` so two slices of the same `asset.id` stay
+  // distinct; fall back to `id` for legacy entries without a slice id.
   const bookingAssetsMap = new Map(
-    bookingAssets.map((asset) => [asset.id, asset])
+    bookingAssets.map((asset) => [asset.bookingAssetId ?? asset.id, asset])
   );
 
-  return selectedItems.flatMap((item: any) => {
-    // Pagination wrapper objects (type "asset" with an assets array).
-    if (item.type === "asset" && item.assets) {
-      return item.assets.map((asset: any) => {
-        const bookingAsset = bookingAssetsMap.get(asset.id);
-        return bookingAsset ? { ...asset, ...bookingAsset } : asset;
+  return selectedItems.flatMap((item) => {
+    // Pagination wrapper objects (type "asset" with an assets array). Guard
+    // that `assets` really is an array before mapping — a malformed entry must
+    // not be treated as a list.
+    if (item.type === "asset" && Array.isArray(item.assets)) {
+      return (item.assets as SelectedBookingItem[]).map((asset) => {
+        const bookingAsset = bookingAssetsMap.get(
+          asset.bookingAssetId ?? asset.id
+        );
+        // Selected item wins so its per-slice bookingAssetId/kitId survive.
+        return bookingAsset ? { ...bookingAsset, ...asset } : asset;
       });
     }
 
@@ -310,8 +335,9 @@ export function flattenSelectedBookingItems(
 
     // Direct asset object (has title, not name) — enrich from booking record.
     if (item.title) {
-      const bookingAsset = bookingAssetsMap.get(item.id);
-      return bookingAsset ? { ...item, ...bookingAsset } : item;
+      const bookingAsset = bookingAssetsMap.get(item.bookingAssetId ?? item.id);
+      // Selected item wins so its per-slice bookingAssetId/kitId survive.
+      return bookingAsset ? { ...bookingAsset, ...item } : item;
     }
 
     // Fallback for any other structure.
@@ -659,4 +685,116 @@ export function resolveBookingRowQtyState(
     isQtyPartiallyCheckedOut,
     isQtyFullyCheckedOut,
   };
+}
+
+/**
+ * `contextStatus` (or the sidebar's equivalent `effectiveStatus`) values
+ * that mean a QT row has ALREADY drawn from — or returned to — the pool for
+ * ITS OWN units. Once true, the stock-availability badges
+ * (`InsufficientStockBadge` / `PendingReturnBadge`) have nothing useful to
+ * warn about: they only reason about units this row hasn't drawn from the
+ * pool yet, and the row's own event (checkout, or checkin/disposition) has
+ * already happened.
+ */
+const CHECKED_OUT_OR_FULFILLED_STATUSES: ReadonlySet<string> = new Set([
+  AssetStatus.CHECKED_OUT,
+  "PARTIALLY_CHECKED_IN",
+  "PARTIALLY_CHECKED_OUT_QTY",
+  "PARTIALLY_CHECKED_OUT_QTY_PENDING_RETURN",
+]);
+
+/**
+ * Whether a QT row's resolved status (`contextStatus` from
+ * {@link resolveBookingRowQtyState}, or the booking-assets-sidebar's
+ * equivalent `effectiveStatus`) indicates the row has already been checked
+ * out and/or (partially) fulfilled as part of THIS booking.
+ *
+ * @param contextStatus - The row's resolved booking-context status.
+ * @returns `true` when the row is already out or already returning/returned.
+ */
+export function isQtyRowCheckedOutOrFulfilled(contextStatus: string): boolean {
+  return CHECKED_OUT_OR_FULFILLED_STATUSES.has(contextStatus);
+}
+
+/** Units free for a QUANTITY_TRACKED asset, as shipped by `buildAvailableUnitsByAsset`. */
+export type QtyStockAvailability = {
+  /** Windowed figure — drives the RED "Insufficient stock" badge. */
+  bookable: number;
+  /** Window-independent "physical-now" figure — drives the AMBER "pending return" badge. */
+  physicalNow: number;
+};
+
+/**
+ * Visual variant for the QT stock-availability badge on a single booking
+ * row, or `null` when neither applies. SINGLE source of truth shared by
+ * `list-asset-content.tsx` and `booking-assets-sidebar.tsx` so the two
+ * surfaces can never disagree (see `.claude/rules/quantity-semantics-per-surface.md`).
+ *
+ * - `"insufficient"` — RED `InsufficientStockBadge`. Hard blocker: this
+ *   row's booked quantity exceeds `availability.bookable` (the windowed
+ *   figure that already accounts for other reservations within the
+ *   booking's own window).
+ * - `"pending-return"` — AMBER `PendingReturnBadge`. Soft warning: the
+ *   booking hasn't started yet (DRAFT/RESERVED) and the row's booked
+ *   quantity FITS within `availability.bookable` (no genuine over-commit)
+ *   but currently exceeds `availability.physicalNow` — some of the needed
+ *   units are physically checked out on OTHER bookings right now and are
+ *   expected back before this booking starts.
+ *
+ * Precedence: a row that's already checked-out/fulfilled (its own event
+ * already happened) or a finished booking (COMPLETE/ARCHIVED, the signal is
+ * historical) never gets either badge, checked BEFORE the quantity
+ * comparisons. RED is checked before AMBER — a genuine over-commit is
+ * always the more actionable signal.
+ *
+ * @param args.rowQty - This row's booked quantity.
+ * @param args.availability - The asset's workspace-availability figures, or
+ *   `undefined` when the loader didn't ship the map (e.g. INDIVIDUAL assets,
+ *   or older callers that don't surface it) — short-circuits to `null`.
+ * @param args.contextStatus - The row's resolved booking-context status
+ *   (`contextStatus` / `effectiveStatus`) — feeds
+ *   {@link isQtyRowCheckedOutOrFulfilled}.
+ * @param args.bookingStatus - The parent booking's status.
+ */
+export function resolveQtyStockBadgeVariant({
+  rowQty,
+  availability,
+  contextStatus,
+  bookingStatus,
+}: {
+  rowQty: number;
+  availability: QtyStockAvailability | undefined;
+  contextStatus: string;
+  bookingStatus: string;
+}): "insufficient" | "pending-return" | null {
+  if (!availability) return null;
+
+  // Historical bookings: the stock signal is stale, nothing actionable
+  // remains.
+  if (bookingStatus === "COMPLETE" || bookingStatus === "ARCHIVED") {
+    return null;
+  }
+
+  // The row's own units have already been checked out (or are already
+  // returning/returned) — nothing left to warn about for THIS row.
+  if (isQtyRowCheckedOutOrFulfilled(contextStatus)) {
+    return null;
+  }
+
+  // Strict inequality — at-capacity is NOT a problem.
+  if (rowQty > availability.bookable) {
+    return "insufficient";
+  }
+
+  // Amber warning only makes sense before the booking has started: once
+  // it's ONGOING/OVERDUE the row's own checkout has either already
+  // happened (caught above) or is imminent, not "expected back before this
+  // booking starts".
+  const isNotStarted =
+    bookingStatus === "DRAFT" || bookingStatus === "RESERVED";
+  if (isNotStarted && rowQty > availability.physicalNow) {
+    return "pending-return";
+  }
+
+  return null;
 }

@@ -16,6 +16,7 @@ import { db } from "~/database/db.server";
 import { hasGetAllValue } from "~/hooks/use-model-filters";
 import { useUserData } from "~/hooks/use-user-data";
 import { isQuantityTracked } from "~/modules/asset/utils";
+import type { KitSliceSpec } from "~/modules/booking/service.server";
 import {
   buildKitSlicesForBooking,
   createBooking,
@@ -38,6 +39,7 @@ import { appendToMetaTitle } from "~/utils/append-to-meta-title";
 import { getClientHint, getHints } from "~/utils/client-hints";
 import { DATE_TIME_FORMAT } from "~/utils/constants";
 import { setCookie } from "~/utils/cookies.server";
+import { resolveUserFormatPrefsById } from "~/utils/date-format.server";
 import { sendNotification } from "~/utils/emitter/send-notification.server";
 import { makeShelfError, ShelfError } from "~/utils/error";
 import {
@@ -169,6 +171,15 @@ export async function action({ context, request }: ActionFunctionArgs) {
     const formData = await request.formData();
     const intent = formData.get("intent") as string;
     const hints = getHints(request);
+    // TIMEZONE FIX: parse the submitted wall-clock date in the acting user's
+    // RESOLVED timezone preference (the same one date DISPLAY uses), not the
+    // browser hint. When the two differ (e.g. pref Europe/London, browser
+    // UTC+3) the browser hint interprets the typed wall-clock in the wrong
+    // zone and stores the wrong UTC instant. Locale still comes from `hints`.
+    const prefTimeZone = (
+      await resolveUserFormatPrefsById(userId, getClientHint(request))
+    ).timeZone;
+    const hintsWithPrefTz = { ...hints, timeZone: prefTimeZone };
     const workingHours = await getWorkingHoursForOrganization(organizationId);
     const bookingSettings =
       await getBookingSettingsForOrganization(organizationId);
@@ -179,7 +190,7 @@ export async function action({ context, request }: ActionFunctionArgs) {
     const payload = parseData(
       formData,
       BookingFormSchema({
-        hints,
+        hints: hintsWithPrefTz,
         action: "new",
         workingHours,
         bookingSettings,
@@ -234,7 +245,7 @@ export async function action({ context, request }: ActionFunctionArgs) {
       formData.get("startDate")!.toString()!,
       DATE_TIME_FORMAT,
       {
-        zone: hints.timeZone,
+        zone: prefTimeZone,
       }
     ).toJSDate();
 
@@ -242,7 +253,7 @@ export async function action({ context, request }: ActionFunctionArgs) {
       formData.get("endDate")!.toString()!,
       DATE_TIME_FORMAT,
       {
-        zone: hints.timeZone,
+        zone: prefTimeZone,
       }
     ).toJSDate();
 
@@ -268,11 +279,7 @@ export async function action({ context, request }: ActionFunctionArgs) {
     // - everything else → `standaloneAssetIds` (loose rows, `assetKitId` NULL)
     // When no kit is involved, `standaloneAssetIds` is just the form's
     // `assetIds` and `kitSlices` stays empty (behavior unchanged).
-    let kitSlices: Array<{
-      assetId: string;
-      assetKitId: string;
-      quantity: number;
-    }> = [];
+    let kitSlices: KitSliceSpec[] = [];
     let standaloneAssetIds = assetIds?.length ? assetIds : [];
 
     if (kitIds.length > 0) {
