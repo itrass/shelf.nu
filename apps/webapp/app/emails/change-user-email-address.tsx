@@ -16,15 +16,15 @@ export const changeEmailAddressTextEmail = ({
     displayName?: string | null;
     email: string;
   };
-}) => `Bonjour ${resolveUserDisplayName(user) || ""},
+}) => `Howdy ${resolveUserDisplayName(user) || "there"},
 
-Votre code de vérification pour le changement d'adresse email est : ${otp}
+Your verification code for email change is: ${otp}
 
-Ne partagez ce code OTP avec personne. Notre équipe de service client ne vous demandera jamais votre mot de passe, OTP, carte de crédit ou informations bancaires.
-Ce code expirera dans 1 heure. Si vous n'avez pas demandé ce changement, veuillez ignorer cet email et contacter le support immédiatement.
+Don't share this OTP with anyone. Our customer service team will never ask you for your password, OTP, credit card, or banking info.
+This code will expire in 1 hour. If you have not requested this change, please ignore the email and contact support immediately.
 
-Cordialement,
-L'équipe Shelf`;
+Kind regards,
+the Shelf team`;
 
 function ChangeEmailAddressHtmlEmailTemplate({
   otp,
@@ -41,36 +41,32 @@ function ChangeEmailAddressHtmlEmailTemplate({
   return (
     <Html>
       <Head>
-        <title>
-          🔐 Votre code de vérification pour le changement d'email est : {otp}
-        </title>
+        <title>🔐 Your verification code for email change is: {otp}</title>
       </Head>
 
       <Container style={{ maxWidth: "100%" }}>
         <div style={{ paddingTop: "8px" }}>
           <Text style={{ ...styles.p }}>
-            Bonjour {resolveUserDisplayName(user) || ""},
+            Howdy {resolveUserDisplayName(user) || "there"},
           </Text>
           <Text style={{ ...styles.p }}>
-            Votre code de vérification pour le changement d'adresse email est :
+            Your verification code for email change is:
           </Text>
           <h2>
             <b>{otp}</b>
           </h2>
           <Text style={{ ...styles.p }}>
-            Ne partagez ce code OTP avec personne. Notre service client ne vous
-            demandera jamais votre mot de passe, OTP, carte de crédit ou
-            informations bancaires.
+            Don't share this OTP with anyone. Our customer service team will
+            never ask you for your password, OTP, credit card, or banking info.
           </Text>
           <Text style={{ ...styles.p }}>
-            Ce code expirera dans 1 heure. Si vous n'avez pas demandé ce
-            changement, veuillez ignorer cet email et contacter le support
-            immédiatement.
+            This code will expire in 1 hour. If you have not requested this
+            change, please ignore the email and contact support immediately.
             <br />
             <br />
-            Cordialement,
+            Kind regards,
             <br />
-            L'équipe Shelf
+            the Shelf team
           </Text>
         </div>
       </Container>

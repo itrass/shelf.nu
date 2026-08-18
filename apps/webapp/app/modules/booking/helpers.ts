@@ -699,6 +699,10 @@ type PdfRawAssetShape = {
       id: string;
       name: string;
       location: { name: string } | null;
+      minimizeInPdf?: boolean | null;
+      image?: string | null;
+      imageExpiration?: Date | null;
+      description?: string | null;
     } | null;
   }>;
   assetLocations?: Array<{ location?: { name: string } | null }>;
@@ -724,6 +728,10 @@ type PdfSliceOverrides = {
     id: string;
     name: string;
     location: { name: string } | null;
+    minimizeInPdf?: boolean | null;
+    image?: string | null;
+    imageExpiration?: Date | null;
+    description?: string | null;
   } | null;
   location: { name: string } | null;
   /** THIS slice's booked units. */
@@ -825,7 +833,17 @@ export function buildPdfAssetRows<TRaw extends PdfRawAssetShape>(
       // group (standalone slices stay individual).
       kitId: sliceKit?.id ?? null,
       kit: sliceKit
-        ? { id: sliceKit.id, name: sliceKit.name, location: sliceKit.location }
+        ? {
+            id: sliceKit.id,
+            name: sliceKit.name,
+            location: sliceKit.location,
+            // Extra display fields only available from a live membership;
+            // snapshot kits (detached residue) fall back to null.
+            minimizeInPdf: liveKit?.minimizeInPdf ?? null,
+            image: liveKit?.image ?? null,
+            imageExpiration: liveKit?.imageExpiration ?? null,
+            description: liveKit?.description ?? null,
+          }
         : null,
       location: getPrimaryLocation<{ name: string }>(raw),
       quantity: slice.quantity,

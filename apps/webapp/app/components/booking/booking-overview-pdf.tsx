@@ -162,17 +162,23 @@ export const BookingOverviewPDF = ({
 };
 
 /**
- * Component to render asset rows, grouping by kit when applicable
- * Handles minimized kits (single row with asset list) and expanded kits (indented assets)
+ * Renders booking asset rows grouped by kit.
+ *
+ * Supports three modes per kit:
+ * - Minimized (`minimizeInPdf: true`) — single kit row + collapsed asset list.
+ * - Expanded (`minimizeInPdf: false`) — kit header row + one indented row per asset.
+ * - Standalone — individual asset row with no kit header.
+ *
+ * The table has 7 columns: #, Image, Name, Qty, Category, Location, Code.
+ * Kit groups use a spanning header row; the Kit column does NOT appear as a
+ * separate flat column, so the 7-column header stays consistent.
  */
 const AssetsOrKitsRows = ({
   assets,
   assetIdToQrCodeMap,
-  kitIdToQrCodeMap,
 }: {
   assets: PdfDbResult["assets"];
   assetIdToQrCodeMap: Record<string, string>;
-  kitIdToQrCodeMap: Record<string, string>;
 }) => {
   // Group assets by kit for rendering
   const renderGroups: Array<{
@@ -182,20 +188,18 @@ const AssetsOrKitsRows = ({
     kitDescription?: string | null;
     minimized?: boolean;
     kitImage?: string | null;
-    kitImageExpiration?: Date | null;
+    kitImageExpiration?: Date | string | null;
+    hasRemovedAssets?: boolean;
     assets: PdfDbResult["assets"];
   }> = [];
 
   let currentKitId: string | null = null;
   let currentKitAssets: PdfDbResult["assets"] = [];
 
-  for (let i = 0; i < assets.length; i++) {
-    const asset = assets[i];
-
+  for (const asset of assets) {
     if (asset.kitId && asset.kit) {
-      // Asset belongs to a kit
       if (currentKitId !== asset.kitId) {
-        // New kit group - flush previous if any
+        // New kit group — flush previous if any.
         if (currentKitId && currentKitAssets.length > 0) {
           const firstAsset = currentKitAssets[0];
           renderGroups.push({
@@ -203,9 +207,10 @@ const AssetsOrKitsRows = ({
             kitId: currentKitId,
             kitName: firstAsset.kit?.name,
             kitDescription: firstAsset.kit?.description,
-            minimized: firstAsset.kit?.minimizeInPdf,
+            minimized: firstAsset.kit?.minimizeInPdf ?? false,
             kitImage: firstAsset.kit?.image,
             kitImageExpiration: firstAsset.kit?.imageExpiration,
+            hasRemovedAssets: currentKitAssets.some((a) => a.isRemovedFromKit),
             assets: currentKitAssets,
           });
         }
@@ -215,8 +220,7 @@ const AssetsOrKitsRows = ({
         currentKitAssets.push(asset);
       }
     } else {
-      // Individual asset (no kit)
-      // Flush any pending kit first
+      // Standalone asset — flush any pending kit first.
       if (currentKitId && currentKitAssets.length > 0) {
         const firstAsset = currentKitAssets[0];
         renderGroups.push({
@@ -224,9 +228,10 @@ const AssetsOrKitsRows = ({
           kitId: currentKitId,
           kitName: firstAsset.kit?.name,
           kitDescription: firstAsset.kit?.description,
-          minimized: firstAsset.kit?.minimizeInPdf,
+          minimized: firstAsset.kit?.minimizeInPdf ?? false,
           kitImage: firstAsset.kit?.image,
           kitImageExpiration: firstAsset.kit?.imageExpiration,
+          hasRemovedAssets: currentKitAssets.some((a) => a.isRemovedFromKit),
           assets: currentKitAssets,
         });
         currentKitId = null;
@@ -236,7 +241,7 @@ const AssetsOrKitsRows = ({
     }
   }
 
-  // Flush any remaining kit
+  // Flush any remaining kit.
   if (currentKitId && currentKitAssets.length > 0) {
     const firstAsset = currentKitAssets[0];
     renderGroups.push({
@@ -244,9 +249,10 @@ const AssetsOrKitsRows = ({
       kitId: currentKitId,
       kitName: firstAsset.kit?.name,
       kitDescription: firstAsset.kit?.description,
-      minimized: firstAsset.kit?.minimizeInPdf,
+      minimized: firstAsset.kit?.minimizeInPdf ?? false,
       kitImage: firstAsset.kit?.image,
       kitImageExpiration: firstAsset.kit?.imageExpiration,
+      hasRemovedAssets: currentKitAssets.some((a) => a.isRemovedFromKit),
       assets: currentKitAssets,
     });
   }
@@ -257,12 +263,12 @@ const AssetsOrKitsRows = ({
     <>
       {renderGroups.map((group) => {
         if (group.type === "asset") {
-          // Render individual asset
+          // Standalone asset row (no kit).
           const asset = group.assets[0];
           globalIndex++;
           return (
             <tr
-              key={`asset-${asset.id}`}
+              key={`asset-${asset.bookingAssetId}`}
               className="border-b border-gray-300 align-top"
             >
               <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
@@ -275,6 +281,7 @@ const AssetsOrKitsRows = ({
                     mainImage: asset.mainImage,
                     thumbnailImage: asset.thumbnailImage,
                     mainImageExpiration: asset.mainImageExpiration,
+                    assetModel: asset.assetModel ?? null,
                   }}
                   alt={asset.title}
                   className="!size-14 object-cover"
@@ -287,6 +294,9 @@ const AssetsOrKitsRows = ({
                     {asset.description}
                   </div>
                 )}
+              </td>
+              <td className="border-r border-gray-300 p-2.5 text-center text-sm text-gray-600">
+                {asset.quantity ?? 1}
               </td>
               <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                 {asset.category?.name}
@@ -307,8 +317,12 @@ const AssetsOrKitsRows = ({
             </tr>
           );
         } else if (group.minimized) {
-          // Render minimized kit - single row with asset list in description
+          // Minimized kit — single summary row + collapsed asset list.
           globalIndex++;
+          const totalQty = group.assets.reduce(
+            (sum, a) => sum + (a.quantity ?? 1),
+            0
+          );
           return (
             <Fragment key={`kit-minimized-${group.kitId}`}>
               <tr className="border-b border-gray-300 bg-gray-50 align-top">
@@ -335,6 +349,14 @@ const AssetsOrKitsRows = ({
                       {group.kitDescription}
                     </div>
                   )}
+                  {group.hasRemovedAssets && (
+                    <div className="mt-1 text-xs font-normal text-gray-500">
+                      Some assets removed from kit — kept as booking record
+                    </div>
+                  )}
+                </td>
+                <td className="border-r border-gray-300 p-2.5 text-center text-sm text-gray-600">
+                  {totalQty}
                 </td>
                 <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                   {group.assets[0]?.category?.name || ""}
@@ -343,30 +365,36 @@ const AssetsOrKitsRows = ({
                   {group.assets[0]?.location?.name || ""}
                 </td>
                 <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  <div className="flex items-center gap-3">
-                    {group.kitId && kitIdToQrCodeMap[group.kitId] && (
-                      <img
-                        src={kitIdToQrCodeMap[group.kitId]}
-                        alt="Kit QR Code"
-                        className="size-14 object-cover"
-                      />
-                    )}
-                    <input type="checkbox" className="block size-5 border" />
-                  </div>
+                  <input type="checkbox" className="block size-5 border" />
                 </td>
               </tr>
-              {/* Asset list in smaller font */}
+              {/* Collapsed asset list below the kit row */}
               <tr className="border-b border-gray-300 bg-gray-50">
-                <td colSpan={6} className="p-2">
+                <td colSpan={7} className="p-2">
                   <div className="ml-8 space-y-1 text-xs text-gray-600">
                     {group.assets.map((asset, idx) => (
-                      <div key={asset.id} className="flex items-start gap-2">
+                      <div
+                        key={asset.bookingAssetId}
+                        className="flex items-start gap-2"
+                      >
                         <span className="font-mono">{idx + 1}.</span>
                         <div className="flex-1">
-                          <div className="font-medium">{asset.title}</div>
+                          <div className="font-medium">
+                            {asset.title}
+                            {(asset.quantity ?? 1) > 1 && (
+                              <span className="ml-1 font-normal text-gray-500">
+                                × {asset.quantity}
+                              </span>
+                            )}
+                          </div>
                           {asset.description && (
                             <div className="mt-0.5 text-gray-500">
                               {asset.description}
+                            </div>
+                          )}
+                          {asset.isRemovedFromKit && (
+                            <div className="mt-0.5 text-gray-400">
+                              Removed from kit — kept as booking record
                             </div>
                           )}
                         </div>
@@ -385,13 +413,13 @@ const AssetsOrKitsRows = ({
             </Fragment>
           );
         } else {
-          // Render expanded kit - kit header + indented assets
+          // Expanded kit — spanning header row + one indented row per asset.
           return (
             <Fragment key={`kit-expanded-${group.kitId}`}>
               {/* Kit header row */}
               <tr className="border-b border-gray-300 bg-blue-50">
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="border-r border-gray-300 p-2.5 text-sm font-semibold text-blue-900"
                 >
                   <div className="flex items-center gap-2">
@@ -412,22 +440,15 @@ const AssetsOrKitsRows = ({
                         </div>
                       )}
                     </div>
-                    {group.kitId && kitIdToQrCodeMap[group.kitId] && (
-                      <img
-                        src={kitIdToQrCodeMap[group.kitId]}
-                        alt="Kit QR Code"
-                        className="ml-auto size-10 object-cover"
-                      />
-                    )}
                   </div>
                 </td>
               </tr>
-              {/* Indented asset rows */}
+              {/* One row per asset member */}
               {group.assets.map((asset) => {
                 globalIndex++;
                 return (
                   <tr
-                    key={asset.id}
+                    key={asset.bookingAssetId}
                     className="border-b border-gray-300 bg-blue-50 align-top"
                   >
                     <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
@@ -440,6 +461,7 @@ const AssetsOrKitsRows = ({
                           mainImage: asset.mainImage,
                           thumbnailImage: asset.thumbnailImage,
                           mainImageExpiration: asset.mainImageExpiration,
+                          assetModel: asset.assetModel ?? null,
                         }}
                         alt={asset.title}
                         className="!size-14 object-cover"
@@ -452,6 +474,14 @@ const AssetsOrKitsRows = ({
                           {asset.description}
                         </div>
                       )}
+                      {asset.isRemovedFromKit && (
+                        <div className="ml-4 mt-1 text-xs text-gray-500">
+                          Removed from kit — kept as booking record
+                        </div>
+                      )}
+                    </td>
+                    <td className="border-r border-gray-300 p-2.5 text-center text-sm text-gray-600">
+                      {asset.quantity ?? 1}
                     </td>
                     <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
                       {asset.category?.name}
@@ -672,89 +702,14 @@ const BookingPDFPreview = ({
             </tr>
           </thead>
           <tbody>
-            {assets.map((asset, index) => (
-              // Per-slice rows: a QT asset booked standalone + via multiple
-              // kits appears once per slice, so key on the unique
-              // `bookingAssetId` (asset.id would collide across slices).
-              <Fragment key={asset.bookingAssetId}>
-                <tr
-                  key={asset.bookingAssetId}
-                  className={tw(
-                    "align-top",
-                    !asset.description && "border-b border-gray-300"
-                  )}
-                >
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {index + 1}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    <AssetImage
-                      asset={{
-                        id: asset.id,
-                        mainImage: asset.mainImage,
-                        thumbnailImage: asset.thumbnailImage,
-                        mainImageExpiration: asset.mainImageExpiration,
-                        assetModel: asset.assetModel ?? null,
-                      }}
-                      alt={`Image of ${asset.title}`}
-                      className="!size-14 object-cover"
-                    />
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.title}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-center text-sm text-gray-600">
-                    {/* THIS slice's booked units; INDIVIDUAL slices are qty 1. */}
-                    {asset.quantity ?? 1}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.kit?.name}
-                    {/* Print-medium equivalent of the overview's
-                        "Removed from kit" badge — a tooltip can't exist on
-                        paper, so the explanation is printed inline. Without
-                        it a detached row is indistinguishable from a live kit
-                        member, and the kit's printed rows out-number the kit's
-                        actual contents with nothing explaining the gap.
-                        Status-neutral wording: CANCELLED bookings keep these
-                        rows too and may never have gone out. */}
-                    <When truthy={!!asset.isRemovedFromKit}>
-                      <span className="mt-1 block text-xs text-gray-500">
-                        Removed from kit — kept as a record of what was booked
-                      </span>
-                    </When>
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.category?.name}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    {asset?.location?.name}
-                  </td>
-                  <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={assetIdToQrCodeMap[asset.id] || ""}
-                        alt="QR Code"
-                        className="size-14 object-cover"
-                      />
-                      <input type="checkbox" className="block size-5 border" />
-                    </div>
-                  </td>
-                </tr>
-
-                <When truthy={!!asset.description}>
-                  <tr className="border-b border-gray-300 align-top">
-                    <td colSpan={8} className="m-2 p-2">
-                      <div className="flex items-start gap-4 bg-gray-100 p-4">
-                        <div className="w-20 text-xs">Asset Description</div>
-                        <div className="flex-1 text-sm">
-                          {asset.description}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                </When>
-              </Fragment>
-            ))}
+            {/* Kit members are visually grouped with a spanning kit header row.
+                Standalone assets render as individual rows.
+                Each slice uses bookingAssetId as key — QT assets booked
+                standalone + via kits appear once per slice. */}
+            <AssetsOrKitsRows
+              assets={assets}
+              assetIdToQrCodeMap={assetIdToQrCodeMap}
+            />
           </tbody>
         </table>
 

@@ -5,21 +5,21 @@ export const onboardingEmailText = ({
   firstName,
 }: {
   firstName: string;
-}) => `Bonjour ${firstName},
+}) => `Hi ${firstName},
 
-Ravi de vous accueillir sur Shelf ! Je suis Carlos Virreira, l'un des co-fondateurs, et je suis impatient d'en savoir plus sur vos besoins en tant que professionnel de la gestion d'actifs.
+Thrilled to have you on board at Shelf! I'm Carlos Virreira, one of the co-founders, and I'm excited to learn more about your needs as an asset management professional.
 
-Comment prévoyez-vous d'utiliser Shelf.nu ?
+How do you plan to use Shelf.nu?
 
-Quelles fonctionnalités sont essentielles pour vous dans un système de gestion d'actifs ?
+What features are essential for you in an asset management system?
 
-Votre avis est précieux pour nous permettre d'affiner Shelf.nu pour des professionnels comme vous.
+Your input is key as we fine-tune Shelf.nu for professionals like yourself.
 
-N'hésitez pas à répondre directement à ce mail et à partager ce qui vous passe par la tête. Tous les mails arrivent dans ma boîte personnelle et j'adore recevoir des messages.
+Feel free to hit reply and share anything in your mind. All mails reach my personal inbox and I love receiving mails.
 
-Salutations des Pays-Bas,
+Greetings from The Netherlands,
 
 Carlos Virreira
-Fondateur & Responsable Vision
+Founder & Vision Lead
 Shelf Asset Management, Inc.
 `;

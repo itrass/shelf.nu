@@ -80,7 +80,7 @@ export function AuditUpdatesEmailTemplate({
   return (
     <Html>
       <Head>
-        <title>Mise à jour d'audit depuis Shelf.nu</title>
+        <title>Audit update from Shelf.nu</title>
       </Head>
 
       <Container
@@ -105,14 +105,14 @@ export function AuditUpdatesEmailTemplate({
           </Heading>
           <p style={{ ...styles.p }}>
             <span style={{ color: "#101828", fontWeight: "600" }}>
-              Créé par :
+              Created by:
             </span>{" "}
             {creatorName}
           </p>
           {dueDateFormatted && (
             <p style={{ ...styles.p }}>
               <span style={{ color: "#101828", fontWeight: "600" }}>
-                Date d'échéance :
+                Due date:
               </span>{" "}
               {dueDateFormatted}
             </p>
@@ -120,7 +120,7 @@ export function AuditUpdatesEmailTemplate({
           {completedAt && (
             <p style={{ ...styles.p }}>
               <span style={{ color: "#101828", fontWeight: "600" }}>
-                Terminé le :
+                Completed on:
               </span>{" "}
               {formatDate(completedAt, prefs, { includeTime: true })}
               {wasOverdue && (
@@ -134,7 +134,7 @@ export function AuditUpdatesEmailTemplate({
           {audit.description && (
             <p style={{ ...styles.p }}>
               <span style={{ color: "#101828", fontWeight: "600" }}>
-                Description :
+                Description:
               </span>{" "}
               {audit.description}
             </p>
@@ -155,7 +155,7 @@ export function AuditUpdatesEmailTemplate({
                 maxWidth: "240px",
               }}
             >
-              Voir l'audit dans l'application
+              View audit in app
             </Button>
             {receiptUrl && (
               <Button
@@ -169,7 +169,7 @@ export function AuditUpdatesEmailTemplate({
                   maxWidth: "240px",
                 }}
               >
-                Télécharger le reçu
+                Download receipt
               </Button>
             )}
           </div>
@@ -193,13 +193,13 @@ export function AuditUpdatesEmailTemplate({
                 color: "#344054",
               }}
             >
-              Cet email vous a été envoyé car vous êtes le PROPRIÉTAIRE ou ADMIN
-              de l'espace de travail{" "}
+              This email was sent to you because you are the OWNER or ADMIN of
+              the workspace{" "}
               <span style={{ color: "#101828", fontWeight: "600" }}>
                 "{audit.organization.name}"
               </span>
-              . <br /> Si vous pensez que vous n'auriez pas dû recevoir cet
-              email, veuillez contacter le support.
+              . <br /> If you think you weren't supposed to have received this
+              email please contact support.
             </p>
           ) : (
             <p
@@ -210,9 +210,9 @@ export function AuditUpdatesEmailTemplate({
                 color: "#71717A",
               }}
             >
-              Merci,
+              Thanks,
               <br />
-              L'équipe Shelf
+              The Shelf Team
             </p>
           )}
           <p

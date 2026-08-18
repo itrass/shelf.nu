@@ -68,7 +68,13 @@ export interface PdfDbResult {
     category: Pick<Category, "name"> | null;
     location: Pick<Location, "name"> | null;
     kit:
-      | (Pick<Kit, "id" | "name"> & { location: Pick<Location, "name"> | null })
+      | (Pick<Kit, "id" | "name"> & {
+          location: Pick<Location, "name"> | null;
+          minimizeInPdf?: boolean | null;
+          image?: string | null;
+          imageExpiration?: Date | null;
+          description?: string | null;
+        })
       | null;
     /** THIS slice's booked units (`BookingAsset.quantity`). */
     quantity: number;
