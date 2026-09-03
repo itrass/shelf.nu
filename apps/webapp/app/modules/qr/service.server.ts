@@ -565,6 +565,52 @@ export async function getQrCodeMaps({
   return finalObject;
 }
 
+interface KitQRCodeMapParams {
+  kits: Array<Pick<Kit, "id"> & { qrCodes: Qr[] }>;
+  size: "small" | "medium" | "large" | "cable";
+}
+
+/**
+ * Generates base64 QR code images for a list of kits, keyed by Kit id.
+ * Mirrors {@link getQrCodeMaps} for assets.
+ */
+export async function getKitQrCodeMaps({
+  kits,
+  size,
+}: KitQRCodeMapParams): Promise<Record<string, string>> {
+  const finalObject: Record<string, string> = {};
+
+  try {
+    await Promise.all(
+      kits.map(async (kit) => {
+        try {
+          const qr = kit.qrCodes[0];
+          const qrCode = qr
+            ? await generateCode({
+                version: qr.version as TypeNumber,
+                errorCorrection: qr.errorCorrection as ErrorCorrectionLevel,
+                size,
+                qr,
+              })
+            : null;
+
+          if (qrCode?.code) {
+            finalObject[kit.id] = qrCode.code.src || "";
+          }
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error(`Error processing kit with id ${kit.id}:`, error);
+        }
+      })
+    );
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("Error generating kit QR code maps:", err);
+  }
+
+  return finalObject;
+}
+
 /** Extracts qrCodes from data and checks their validity for import
  * You can only import unclaimed or unlinked codes
  * - For non-existing codes - we can allow them to be imported

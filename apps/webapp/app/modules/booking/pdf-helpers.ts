@@ -22,7 +22,7 @@ import {
   groupAndSortAssetsByKit,
 } from "./helpers";
 import { getBooking } from "./service.server";
-import { getQrCodeMaps } from "../qr/service.server";
+import { getKitQrCodeMaps, getQrCodeMaps } from "../qr/service.server";
 import { TAG_WITH_COLOR_SELECT } from "../tag/constants";
 
 export interface SortParams {
@@ -98,6 +98,8 @@ export interface PdfDbResult {
     "id" | "name" | "imageId" | "currency" | "updatedAt"
   >;
   assetIdToQrCodeMap: Record<string, string>;
+  /** QR code images keyed by Kit id, for kit header rows in the PDF. */
+  kitIdToQrCodeMap: Record<string, string>;
   /**
    * Outstanding model-level reservations on the booking (Phase 3d).
    * Only rows with `quantity > 0` are meaningful for the PDF — the
@@ -287,12 +289,32 @@ export async function fetchAllPdfRelatedData(
     const uniqueAssetsForQr = Array.from(
       new Map(sortedAssets.map((asset) => [asset.id, asset])).values()
     );
-    const assetIdToQrCodeMap = await getQrCodeMaps({
-      assets: uniqueAssetsForQr,
-      userId,
-      organizationId,
-      size: "small",
-    });
+
+    // Unique kit IDs across all slices — each kit must appear once for QR generation.
+    const uniqueKitIds = [
+      ...new Set(
+        sortedAssets
+          .map((a) => a.kitId)
+          .filter((id): id is string => id !== null)
+      ),
+    ];
+
+    const [assetIdToQrCodeMap, kitIdToQrCodeMap] = await Promise.all([
+      getQrCodeMaps({
+        assets: uniqueAssetsForQr,
+        userId,
+        organizationId,
+        size: "small",
+      }),
+      uniqueKitIds.length > 0
+        ? db.kit
+            .findMany({
+              where: { id: { in: uniqueKitIds }, organizationId },
+              select: { id: true, qrCodes: true },
+            })
+            .then((kits) => getKitQrCodeMaps({ kits, size: "small" }))
+        : Promise.resolve({} as Record<string, string>),
+    ]);
 
     // Phase 3d (Book-by-Model): surface outstanding model-level
     // reservations so the PDF can render a dedicated "Requested models"
@@ -337,6 +359,7 @@ export async function fetchAllPdfRelatedData(
       }),
       organization,
       assetIdToQrCodeMap,
+      kitIdToQrCodeMap,
       modelRequests,
     };
   } catch (cause) {

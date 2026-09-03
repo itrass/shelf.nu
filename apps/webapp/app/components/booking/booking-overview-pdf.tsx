@@ -176,9 +176,11 @@ export const BookingOverviewPDF = ({
 const AssetsOrKitsRows = ({
   assets,
   assetIdToQrCodeMap,
+  kitIdToQrCodeMap,
 }: {
   assets: PdfDbResult["assets"];
   assetIdToQrCodeMap: Record<string, string>;
+  kitIdToQrCodeMap: Record<string, string>;
 }) => {
   // Group assets by kit for rendering
   const renderGroups: Array<{
@@ -365,7 +367,16 @@ const AssetsOrKitsRows = ({
                   {group.assets[0]?.location?.name || ""}
                 </td>
                 <td className="border-r border-gray-300 p-2.5 text-sm text-gray-600">
-                  <input type="checkbox" className="block size-5 border" />
+                  <div className="flex items-center gap-3">
+                    {group.kitId && kitIdToQrCodeMap[group.kitId] && (
+                      <img
+                        src={kitIdToQrCodeMap[group.kitId]}
+                        alt="QR Code"
+                        className="size-14 object-cover"
+                      />
+                    )}
+                    <input type="checkbox" className="block size-5 border" />
+                  </div>
                 </td>
               </tr>
               {/* Collapsed asset list below the kit row */}
@@ -440,6 +451,13 @@ const AssetsOrKitsRows = ({
                         </div>
                       )}
                     </div>
+                    {group.kitId && kitIdToQrCodeMap[group.kitId] && (
+                      <img
+                        src={kitIdToQrCodeMap[group.kitId]}
+                        alt="QR Code"
+                        className="size-10 object-cover"
+                      />
+                    )}
                   </div>
                 </td>
               </tr>
@@ -527,6 +545,7 @@ const BookingPDFPreview = ({
     organization,
     assets,
     assetIdToQrCodeMap,
+    kitIdToQrCodeMap,
     totalValue,
     modelRequests,
   } = pdfMeta;
@@ -709,6 +728,7 @@ const BookingPDFPreview = ({
             <AssetsOrKitsRows
               assets={assets}
               assetIdToQrCodeMap={assetIdToQrCodeMap}
+              kitIdToQrCodeMap={kitIdToQrCodeMap}
             />
           </tbody>
         </table>
